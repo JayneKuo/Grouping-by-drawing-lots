@@ -40,9 +40,11 @@ export const syncStatus = {
 }
 
 const DATA_KEY = 'tennis_tournament_data'
+const ETAG_KEY = 'tennis_tournament_etag' // 存储ETag用于乐观锁
 
 export const storage = {
   useGist: true,
+  currentETag: null, // 当前数据的ETag
   
   // 从Gist读取数据
   async getAll() {
@@ -104,26 +106,40 @@ export const storage = {
             lastSync: null
           }
           localStorage.setItem(DATA_KEY, JSON.stringify(emptyData))
+          this.currentETag = null
           return emptyData
         }
         throw new Error(`HTTP错误: ${response.status} - ${response.statusText}`)
+      }
+      
+      // 保存ETag用于乐观锁
+      const etag = response.headers.get('ETag') || response.headers.get('etag')
+      if (etag) {
+        this.currentETag = etag.replace(/"/g, '') // 移除引号
+        try {
+          localStorage.setItem(ETAG_KEY, this.currentETag)
+        } catch (e) {
+          console.warn('⚠️ 保存ETag失败:', e)
+        }
+        console.log('📌 保存ETag:', this.currentETag)
       }
       
       // 从GitHub API响应中提取文件内容
       const gistResponse = await response.json()
       const fileContent = gistResponse.files?.[GIST_FILENAME]?.content
       
-      if (!fileContent) {
-        console.warn('⚠️ Gist文件内容为空，返回空数据')
-        const emptyData = {
-          tournaments: [],
-          users: [],
-          matches: [],
-          lastSync: null
+        if (!fileContent) {
+          console.warn('⚠️ Gist文件内容为空，返回空数据')
+          const emptyData = {
+            tournaments: [],
+            users: [],
+            matches: [],
+            lastSync: null,
+            matchLocks: {}
+          }
+          localStorage.setItem(DATA_KEY, JSON.stringify(emptyData))
+          return emptyData
         }
-        localStorage.setItem(DATA_KEY, JSON.stringify(emptyData))
-        return emptyData
-      }
       
       // 解析JSON内容
       const data = JSON.parse(fileContent)
@@ -133,7 +149,8 @@ export const storage = {
         tournaments: data.tournaments || [],
         users: data.users || [],
         matches: data.matches || [],
-        lastSync: data.lastSync || null
+        lastSync: data.lastSync || null,
+        matchLocks: data.matchLocks || {} // 比赛锁定信息
       }
       
       console.log('✅ 从Gist读取数据成功，比赛数:', cleanData.tournaments.length)
@@ -161,11 +178,23 @@ export const storage = {
         if (localData) {
           const parsed = JSON.parse(localData)
           console.log('📖 从localStorage读取数据（降级模式），比赛数:', parsed.tournaments?.length || 0)
+          
+          // 尝试恢复ETag
+          try {
+            const savedETag = localStorage.getItem(ETAG_KEY)
+            if (savedETag) {
+              this.currentETag = savedETag
+            }
+          } catch (e) {
+            console.warn('⚠️ 恢复ETag失败:', e)
+          }
+          
           return {
             tournaments: parsed.tournaments || [],
             users: parsed.users || [],
             matches: parsed.matches || [],
-            lastSync: parsed.lastSync || null
+            lastSync: parsed.lastSync || null,
+            matchLocks: parsed.matchLocks || {}
           }
         }
       } catch (e) {
@@ -174,26 +203,236 @@ export const storage = {
       
       // 返回空数据
       console.log('⚠️ 没有找到数据，返回空数据')
+      this.currentETag = null
       return {
         tournaments: [],
         users: [],
         matches: [],
-        lastSync: null
+        lastSync: null,
+        matchLocks: {}
       }
     }
   },
   
-  // 保存数据到Gist
-  async saveAll(data) {
+  // 锁定比赛（返回是否成功）
+  async lockMatch(matchId, userId, userName) {
+    const LOCK_TIMEOUT = 5 * 60 * 1000 // 5分钟超时
+    const data = await this.getAll()
+    
+    // 清理过期的锁定
+    const now = Date.now()
+    const locks = data.matchLocks || {}
+    Object.keys(locks).forEach(id => {
+      if (locks[id].expiresAt < now) {
+        delete locks[id]
+      }
+    })
+    
+    // 检查是否已被其他用户锁定
+    const existingLock = locks[matchId]
+    if (existingLock && existingLock.expiresAt > now) {
+      if (existingLock.userId !== userId) {
+        return {
+          success: false,
+          message: `该比赛正在被 ${existingLock.userName} 锁定，不能作为该比赛场次裁判`,
+          lockedBy: existingLock.userName
+        }
+      } else {
+        // 如果是自己锁定的，更新过期时间
+        existingLock.expiresAt = now + LOCK_TIMEOUT
+        existingLock.lockedAt = now
+      }
+    } else {
+      // 创建新锁定
+      locks[matchId] = {
+        userId,
+        userName,
+        lockedAt: now,
+        expiresAt: now + LOCK_TIMEOUT
+      }
+    }
+    
+    data.matchLocks = locks
+    await this.saveAll(data)
+    
+    return {
+      success: true,
+      message: '锁定成功'
+    }
+  },
+  
+  // 释放锁定
+  async unlockMatch(matchId, userId) {
+    const data = await this.getAll()
+    const locks = data.matchLocks || {}
+    
+    const lock = locks[matchId]
+    if (lock && lock.userId === userId) {
+      delete locks[matchId]
+      data.matchLocks = locks
+      await this.saveAll(data)
+      return true
+    }
+    
+    return false
+  },
+  
+  // 刷新锁定（心跳机制）
+  async refreshMatchLock(matchId, userId) {
+    const LOCK_TIMEOUT = 5 * 60 * 1000 // 5分钟超时
+    const data = await this.getAll()
+    const locks = data.matchLocks || {}
+    
+    const lock = locks[matchId]
+    if (lock && lock.userId === userId) {
+      const now = Date.now()
+      lock.expiresAt = now + LOCK_TIMEOUT
+      data.matchLocks = locks
+      await this.saveAll(data)
+      return true
+    }
+    
+    return false
+  },
+  
+  // 检查比赛是否被锁定
+  async checkMatchLock(matchId) {
+    const data = await this.getAll()
+    const locks = data.matchLocks || {}
+    const now = Date.now()
+    
+    const lock = locks[matchId]
+    if (lock && lock.expiresAt > now) {
+      return {
+        isLocked: true,
+        lockedBy: lock.userName,
+        userId: lock.userId,
+        expiresAt: lock.expiresAt
+      }
+    }
+    
+    // 清理过期锁定
+    if (lock && lock.expiresAt <= now) {
+      delete locks[matchId]
+      data.matchLocks = locks
+      await this.saveAll(data)
+    }
+    
+    return {
+      isLocked: false
+    }
+  },
+  
+  // 初始化：从localStorage恢复ETag
+  init() {
+    try {
+      const savedETag = localStorage.getItem(ETAG_KEY)
+      if (savedETag) {
+        this.currentETag = savedETag
+        console.log('📌 恢复ETag:', this.currentETag)
+      }
+    } catch (e) {
+      console.warn('⚠️ 初始化ETag失败:', e)
+    }
+  },
+  
+    // 合并数据（智能合并策略）
+  mergeData(oldData, newData) {
+    const merged = {
+      tournaments: [...(oldData.tournaments || [])],
+      users: [...(oldData.users || [])],
+      matches: [...(oldData.matches || [])],
+      lastSync: newData.lastSync || oldData.lastSync,
+      matchLocks: { ...(oldData.matchLocks || {}) } // 合并锁定信息
+    }
+    
+    // 合并matchLocks：保留最新的锁定信息
+    if (newData.matchLocks) {
+      Object.keys(newData.matchLocks).forEach(matchId => {
+        const newLock = newData.matchLocks[matchId]
+        const oldLock = merged.matchLocks[matchId]
+        
+        // 如果新锁定的过期时间更晚，使用新的
+        if (!oldLock || newLock.expiresAt > oldLock.expiresAt) {
+          merged.matchLocks[matchId] = newLock
+        }
+      })
+    }
+    
+    // 合并tournaments：以ID为准，新数据覆盖旧数据
+    if (newData.tournaments) {
+      newData.tournaments.forEach(newTournament => {
+        const index = merged.tournaments.findIndex(t => String(t.id) === String(newTournament.id))
+        if (index >= 0) {
+          // 合并tournament数据：保留旧数据的matches，但更新其他字段
+          const oldTournament = merged.tournaments[index]
+          merged.tournaments[index] = {
+            ...oldTournament,
+            ...newTournament,
+            // 智能合并matches：保留双方都有的match，新数据优先
+            matches: this.mergeMatches(oldTournament.matches || [], newTournament.matches || [])
+          }
+        } else {
+          merged.tournaments.push(newTournament)
+        }
+      })
+    }
+    
+    // 合并users
+    if (newData.users) {
+      newData.users.forEach(newUser => {
+        const index = merged.users.findIndex(u => String(u.id) === String(newUser.id))
+        if (index >= 0) {
+          merged.users[index] = { ...merged.users[index], ...newUser }
+        } else {
+          merged.users.push(newUser)
+        }
+      })
+    }
+    
+    // 合并matches：以ID为准，新数据覆盖旧数据
+    if (newData.matches) {
+      newData.matches.forEach(newMatch => {
+        const index = merged.matches.findIndex(m => String(m.id) === String(newMatch.id))
+        if (index >= 0) {
+          merged.matches[index] = newMatch // 新数据完全覆盖
+        } else {
+          merged.matches.push(newMatch)
+        }
+      })
+    }
+    
+    return merged
+  },
+  
+  // 合并matches数组
+  mergeMatches(oldMatches, newMatches) {
+    const merged = [...oldMatches]
+    newMatches.forEach(newMatch => {
+      const index = merged.findIndex(m => String(m.id) === String(newMatch.id))
+      if (index >= 0) {
+        merged[index] = newMatch // 新数据完全覆盖
+      } else {
+        merged.push(newMatch)
+      }
+    })
+    return merged
+  },
+  
+  // 保存数据到Gist（带乐观锁和冲突解决）
+  async saveAll(data, retryCount = 0) {
+    const MAX_RETRIES = 3
+    
     // 确保数据是纯对象
     const cleanData = JSON.parse(JSON.stringify({
       tournaments: data.tournaments || [],
       users: data.users || [],
       matches: data.matches || [],
-      lastSync: new Date().toISOString()
+      lastSync: new Date().toISOString(),
+      matchLocks: data.matchLocks || {} // 保留锁定信息
     }))
     
-    console.log('💾 保存数据，比赛数:', cleanData.tournaments.length)
+    console.log('💾 保存数据，比赛数:', cleanData.tournaments.length, '重试次数:', retryCount)
     
     // 先快速保存到localStorage（立即响应，不阻塞）
     try {
@@ -225,6 +464,61 @@ export const storage = {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 10000) // 10秒超时
         
+        // 获取当前ETag（用于乐观锁）
+        let currentETag = this.currentETag
+        if (!currentETag) {
+          try {
+            currentETag = localStorage.getItem(ETAG_KEY)
+          } catch (e) {
+            console.warn('⚠️ 读取ETag失败:', e)
+          }
+        }
+        
+        // 如果有ETag，先检查数据是否已被其他用户修改（实现乐观锁）
+        if (currentETag) {
+          console.log('🔒 检查数据冲突，当前ETag:', currentETag)
+          try {
+            const checkResponse = await fetch(`${GIST_API_BASE}/${GIST_ID}`, {
+              method: 'GET',
+              headers: {
+                'Accept': 'application/vnd.github.v3+json'
+              },
+              signal: controller.signal,
+              cache: 'no-cache'
+            })
+            
+            if (checkResponse.ok) {
+              const latestETag = checkResponse.headers.get('ETag')?.replace(/"/g, '') || 
+                                 checkResponse.headers.get('etag')?.replace(/"/g, '')
+              
+              if (latestETag && latestETag !== currentETag) {
+                console.warn('⚠️ 检测到数据冲突（ETag已变化），尝试合并数据...')
+                console.log('   旧ETag:', currentETag, '新ETag:', latestETag)
+                
+                if (retryCount < MAX_RETRIES) {
+                  // 重新读取最新数据
+                  const latestData = await this.getAll()
+                  
+                  // 合并数据
+                  const mergedData = this.mergeData(latestData, cleanData)
+                  
+                  // 更新ETag
+                  this.currentETag = latestETag
+                  
+                  // 重试保存（递归调用）
+                  console.log('🔄 重试保存（合并后数据）...')
+                  return await this.saveAll(mergedData, retryCount + 1)
+                } else {
+                  throw new Error('数据冲突：多次重试后仍无法保存，请刷新页面后重试')
+                }
+              }
+            }
+          } catch (checkError) {
+            console.warn('⚠️ 检查ETag失败，继续保存:', checkError)
+            // 继续执行保存操作
+          }
+        }
+        
         // 使用GitHub API更新Gist
         const gistData = {
           files: {
@@ -234,15 +528,17 @@ export const storage = {
           }
         }
         
+        const headers = {
+          'Authorization': `token ${GIST_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/vnd.github.v3+json'
+        }
+        
         let response
         try {
           response = await fetch(`${GIST_API_BASE}/${GIST_ID}`, {
             method: 'PATCH',
-            headers: {
-              'Authorization': `token ${GIST_TOKEN}`,
-              'Content-Type': 'application/json',
-              'Accept': 'application/vnd.github.v3+json'
-            },
+            headers,
             body: JSON.stringify(gistData),
             signal: controller.signal
           })
@@ -262,8 +558,23 @@ export const storage = {
           throw new Error(errorData.message || `HTTP错误: ${response.status}`)
         }
         
+        // 更新ETag
+        const etag = response.headers.get('ETag') || response.headers.get('etag')
+        if (etag) {
+          this.currentETag = etag.replace(/"/g, '')
+          try {
+            localStorage.setItem(ETAG_KEY, this.currentETag)
+          } catch (e) {
+            console.warn('⚠️ 保存ETag失败:', e)
+          }
+          console.log('✅ 更新ETag:', this.currentETag)
+        }
+        
         console.log('✅ 数据已同步到Gist（后台）')
         syncStatus.setState('success')
+        
+        // 触发数据更新事件，通知其他用户
+        window.dispatchEvent(new CustomEvent('data-updated', { detail: cleanData }))
         
         // 3秒后自动重置为idle状态
         setTimeout(() => {
@@ -646,6 +957,8 @@ export const storage = {
   clearAll() {
     try {
       localStorage.removeItem(DATA_KEY)
+      localStorage.removeItem(ETAG_KEY)
+      this.currentETag = null
       // 也尝试清空Gist（如果有Token）
       if (GIST_ID && GIST_TOKEN) {
         this.saveAll({
@@ -662,4 +975,7 @@ export const storage = {
     }
   }
 }
+
+// 初始化：恢复ETag
+storage.init()
 

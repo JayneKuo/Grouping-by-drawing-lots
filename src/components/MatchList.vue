@@ -242,7 +242,22 @@ function goToMatch(match) {
     match.tournament_id = props.tournamentId
   }
   
-  router.push(`/match/${match.id}?tournament=${tournamentId}`)
+  // 构建查询参数，包含tournament_id和group（如果存在）
+  const queryParams = new URLSearchParams()
+  queryParams.set('tournament', tournamentId)
+  if (match.group) {
+    queryParams.set('group', match.group)
+  }
+  
+  console.log('🔗 跳转到比赛详情:', {
+    matchId: match.id,
+    tournamentId: tournamentId,
+    group: match.group,
+    player1: match.player1_name,
+    player2: match.player2_name
+  })
+  
+  router.push(`/match/${match.id}?${queryParams.toString()}`)
 }
 </script>
 

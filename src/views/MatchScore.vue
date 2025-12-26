@@ -13,8 +13,8 @@
               :src="getPlayerAvatar(match.player1_name, getPlayerGender(match.player1_id))" 
               :alt="match.player1_name"
               class="player-avatar clickable-avatar" 
-              :class="{ 'disabled': match.status === 'finished' }"
-              @click="match.status !== 'finished' && recordPoint(0)"
+              :class="{ 'disabled': match.status === 'finished' || (matchLockInfo.isLocked && !matchLockInfo.isLockedByMe) }"
+              @click="match.status !== 'finished' && !(matchLockInfo.isLocked && !matchLockInfo.isLockedByMe) && recordPoint(0)"
               @error="handleAvatarError"
             />
             <span v-if="getPlayerNumber(match.player1_id)" class="avatar-number">{{ getPlayerNumber(match.player1_id) }}</span>
@@ -57,8 +57,8 @@
               :src="getPlayerAvatar(match.player2_name, getPlayerGender(match.player2_id))" 
               :alt="match.player2_name"
               class="player-avatar clickable-avatar" 
-              :class="{ 'disabled': match.status === 'finished' }"
-              @click="match.status !== 'finished' && recordPoint(1)"
+              :class="{ 'disabled': match.status === 'finished' || (matchLockInfo.isLocked && !matchLockInfo.isLockedByMe) }"
+              @click="match.status !== 'finished' && !(matchLockInfo.isLocked && !matchLockInfo.isLockedByMe) && recordPoint(1)"
               @error="handleAvatarError"
             />
             <span v-if="getPlayerNumber(match.player2_id)" class="avatar-number">{{ getPlayerNumber(match.player2_id) }}</span>
@@ -86,8 +86,18 @@
         </div>
       </div>
       
+      <!-- 锁定提示 -->
+      <van-notice-bar
+        v-if="matchLockInfo.isLocked && !matchLockInfo.isLockedByMe"
+        color="#ff6b6b"
+        background="#fff3f3"
+        left-icon="warning-o"
+        :text="`该比赛正在被 ${matchLockInfo.lockedBy} 锁定，不能作为该比赛场次裁判`"
+        style="margin: 12px 16px;"
+      />
+      
       <!-- 内容区域 -->
-      <div class="match-content">
+      <div class="match-content" :class="{ 'locked-content': matchLockInfo.isLocked && !matchLockInfo.isLockedByMe }">
         <!-- 对战详情 - 比分 -->
         <div v-if="activeTab === 'match'" class="tab-content">
           <div class="scoreboard-container">
@@ -679,7 +689,7 @@
       </van-popup>
       
       <!-- 保存和撤销按钮（吸底，同一行） -->
-      <div class="save-button-fixed">
+      <div v-if="!isMatchFinished" class="save-button-fixed">
         <div class="save-undo-buttons">
           <van-button 
             type="default" 
@@ -707,7 +717,7 @@
       </div>
       
       <!-- 选手操作按钮组（左右布局，与选手位置对应） -->
-      <div class="player-actions">
+      <div v-if="!isMatchFinished" class="player-actions">
         <div class="player-actions-container">
           <!-- 左侧：选手1操作区 -->
           <div class="player-action-column player-left-column">
@@ -831,15 +841,17 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showSuccessToast, showFailToast } from 'vant'
+import { useUserStore } from '../store/user'
 import { recordPoint as recordPointUtil, getScoreText, recordFirstServeFault as recordFirstServeFaultUtil, recordDoubleFault as recordDoubleFaultUtil, setGoldenPoint as setGoldenPointUtil } from '../utils/scoring'
 import { storage } from '../utils/storage'
 import { getPlayerAvatar } from '../utils/avatar'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 const match = ref(null)
 const saving = ref(false)
 const lastAction = ref(null)
@@ -867,12 +879,27 @@ const scoreboardRef = ref(null)
 const showFullscreenScoreboard = ref(false)
 const isProcessingPoint = ref(false) // 防止快速点击导致并发问题
 
+// 锁定相关状态
+const matchLockInfo = ref({
+  isLocked: false,
+  isLockedByMe: false,
+  lockedBy: null,
+  userId: null
+})
+let lockRefreshInterval = null // 锁定刷新定时器
+let lockCheckInterval = null // 锁定检查定时器
+
 const currentSet = computed(() => {
   return match.value?.currentSet
 })
 
 const completedSets = computed(() => {
   return match.value?.sets || []
+})
+
+// 判断比赛是否已结束
+const isMatchFinished = computed(() => {
+  return match.value?.status === 'finished'
 })
 
 function getPlayer1Score() {
@@ -1432,6 +1459,11 @@ const currentPointServeInfo = ref({
 })
 
 async function recordPoint(playerIndex, skipSound = false, isAce = false) {
+  // 检查锁定状态
+  if (matchLockInfo.value.isLocked && !matchLockInfo.value.isLockedByMe) {
+    showFailToast(`该比赛正在被 ${matchLockInfo.value.lockedBy} 锁定，不能作为该比赛场次裁判`)
+    return
+  }
   if (!match.value) return
   
   // 如果正在处理中，忽略本次点击（防止快速点击导致并发问题）
@@ -1675,6 +1707,12 @@ function incrementDoubleFaultCount(playerIndex) {
 
 // 选手操作函数
 async function recordAceForPlayer(playerIndex) {
+  // 检查锁定状态
+  if (matchLockInfo.value.isLocked && !matchLockInfo.value.isLockedByMe) {
+    showFailToast(`该比赛正在被 ${matchLockInfo.value.lockedBy} 锁定，不能作为该比赛场次裁判`)
+    return
+  }
+  
   if (!match.value || match.value.status === 'finished') {
     showFailToast('比赛已结束，无法修改比分')
     return
@@ -1695,6 +1733,12 @@ async function recordAceForPlayer(playerIndex) {
 }
 
 async function recordDoubleFaultForPlayer(playerIndex) {
+  // 检查锁定状态
+  if (matchLockInfo.value.isLocked && !matchLockInfo.value.isLockedByMe) {
+    showFailToast(`该比赛正在被 ${matchLockInfo.value.lockedBy} 锁定，不能作为该比赛场次裁判`)
+    return
+  }
+  
   if (!match.value || match.value.status === 'finished') {
     showFailToast('比赛已结束，无法修改比分')
     return
@@ -1756,6 +1800,12 @@ async function recordDoubleFaultForPlayer(playerIndex) {
 }
 
 async function recordFirstServeFault(playerIndex) {
+  // 检查锁定状态
+  if (matchLockInfo.value.isLocked && !matchLockInfo.value.isLockedByMe) {
+    showFailToast(`该比赛正在被 ${matchLockInfo.value.lockedBy} 锁定，不能作为该比赛场次裁判`)
+    return
+  }
+  
   if (!match.value || match.value.status === 'finished') {
     showFailToast('比赛已结束，无法修改比分')
     return
@@ -1813,6 +1863,12 @@ function closeFullscreenScoreboard() {
 }
 
 async function recordServeOut(playerIndex) {
+  // 检查锁定状态
+  if (matchLockInfo.value.isLocked && !matchLockInfo.value.isLockedByMe) {
+    showFailToast(`该比赛正在被 ${matchLockInfo.value.lockedBy} 锁定，不能作为该比赛场次裁判`)
+    return
+  }
+  
   if (!match.value || match.value.status === 'finished') {
     showFailToast('比赛已结束，无法修改比分')
     return
@@ -1874,6 +1930,12 @@ async function recordServeOut(playerIndex) {
 }
 
 async function recordReturnOut(playerIndex) {
+  // 检查锁定状态
+  if (matchLockInfo.value.isLocked && !matchLockInfo.value.isLockedByMe) {
+    showFailToast(`该比赛正在被 ${matchLockInfo.value.lockedBy} 锁定，不能作为该比赛场次裁判`)
+    return
+  }
+  
   if (!match.value || match.value.status === 'finished') {
     showFailToast('比赛已结束，无法修改比分')
     return
@@ -1989,7 +2051,8 @@ async function loadMatch() {
   try {
     const matchId = route.params.id
     const tournamentId = route.query.tournament // 从查询参数获取tournament_id
-    console.log('🔍 开始加载比赛，路由参数ID:', matchId, 'Tournament ID:', tournamentId, '类型:', typeof matchId)
+    const group = route.query.group // 从查询参数获取group（用于区分同一tournament中不同组的相同ID）
+    console.log('🔍 开始加载比赛，路由参数ID:', matchId, 'Tournament ID:', tournamentId, 'Group:', group, '类型:', typeof matchId)
     
     if (!matchId) {
       showFailToast('比赛ID不存在')
@@ -2032,34 +2095,96 @@ async function loadMatch() {
       }
       
       if (tournament.matches && Array.isArray(tournament.matches)) {
-        foundMatch = tournament.matches.find(m => {
+        // 先找到所有匹配ID的match（可能有多个，因为ID可能重复）
+        const candidateMatches = tournament.matches.filter(m => {
           const mId = m.id
-          const matchFound = mId === matchId || mId === matchIdNum || String(mId) === String(matchId)
+          return mId === matchId || mId === matchIdNum || String(mId) === String(matchId)
+        })
+        
+        console.log('🔍 找到候选matches:', candidateMatches.length, candidateMatches.map(m => ({
+          id: m.id,
+          group: m.group,
+          player1: m.player1_name,
+          player2: m.player2_name,
+          tournament_id: m.tournament_id
+        })))
+        
+        // 从候选matches中查找最匹配的
+        // 优先级：1. tournament_id + group匹配  2. tournament_id匹配  3. 第一个候选
+        if (group && candidateMatches.length > 1) {
+          // 如果指定了group且有多个候选，优先匹配group
+          foundMatch = candidateMatches.find(m => {
+            const matchTournamentId = m.tournament_id
+            const isTournamentMatch = matchTournamentId === tournamentIdNum || 
+                                     matchTournamentId === tournamentId || 
+                                     String(matchTournamentId) === String(tournamentId) ||
+                                     matchTournamentId === tournament.id
+            const isGroupMatch = m.group === group
+            return isTournamentMatch && isGroupMatch
+          })
           
-          // 额外验证：确保match的tournament_id也匹配
-          if (matchFound) {
+          if (foundMatch) {
+            console.log('✅ 通过group匹配找到比赛:', foundMatch.group)
+          }
+        }
+        
+        // 如果还没找到，尝试只匹配tournament_id
+        if (!foundMatch) {
+          foundMatch = candidateMatches.find(m => {
             const matchTournamentId = m.tournament_id
             const isTournamentMatch = matchTournamentId === tournamentIdNum || 
                                      matchTournamentId === tournamentId || 
                                      String(matchTournamentId) === String(tournamentId) ||
                                      matchTournamentId === tournament.id
             return isTournamentMatch
-          }
-          return false
-        })
+          })
+        }
+        
+        // 如果没找到匹配tournament_id的，使用第一个候选（兼容旧数据）
+        if (!foundMatch && candidateMatches.length > 0) {
+          console.warn('⚠️ 未找到完全匹配的match，使用第一个候选')
+          foundMatch = candidateMatches[0]
+        }
         
         if (foundMatch) {
           foundTournament = tournament
           console.log('✅ 从指定tournament中找到比赛:', {
             id: foundMatch.id,
+            group: foundMatch.group,
+            expectedGroup: group,
+            groupMatch: foundMatch.group === group,
             player1: foundMatch.player1_name,
             player2: foundMatch.player2_name,
+            player1_id: foundMatch.player1_id,
+            player2_id: foundMatch.player2_id,
             tournament: tournament.name,
             tournamentId: tournament.id,
             matchTournamentId: foundMatch.tournament_id
           })
+          
+          // 验证group是否匹配（如果路由中指定了group）
+          if (group && foundMatch.group !== group) {
+            console.error('❌ Group不匹配！期望:', group, '实际:', foundMatch.group)
+            // 尝试重新查找正确的match
+            const correctMatch = tournament.matches.find(m => {
+              const mId = m.id
+              const idMatch = mId === matchId || mId === matchIdNum || String(mId) === String(matchId)
+              const groupMatch = m.group === group
+              return idMatch && groupMatch
+            })
+            if (correctMatch) {
+              console.log('✅ 找到正确的match（通过group验证）')
+              foundMatch = correctMatch
+            }
+          }
         } else {
           console.error('❌ 在指定tournament中未找到match，Match ID:', matchId, 'Tournament ID:', tournamentIdNum)
+          console.error('   所有matches:', tournament.matches.map(m => ({
+            id: m.id,
+            group: m.group,
+            player1: m.player1_name,
+            player2: m.player2_name
+          })))
           showFailToast('未找到指定的比赛')
           return
         }
@@ -2177,8 +2302,14 @@ async function loadMatch() {
           return pId === mId || String(pId) === String(mId) || Number(pId) === Number(mId)
         })
         if (player1 && player1.name) {
+          const oldName = match.value.player1_name
           match.value.player1_name = player1.name
           match.value.player1_id = player1.id // 确保ID类型一致
+          if (oldName !== player1.name) {
+            console.log('📝 更新player1名字:', oldName, '->', player1.name, 'ID:', player1.id)
+          }
+        } else {
+          console.warn('⚠️ 未找到player1，ID:', match.value.player1_id, '名字:', match.value.player1_name)
         }
       }
       if (match.value.player2_id !== undefined && match.value.player2_id !== null) {
@@ -2189,11 +2320,28 @@ async function loadMatch() {
           return pId === mId || String(pId) === String(mId) || Number(pId) === Number(mId)
         })
         if (player2 && player2.name) {
+          const oldName = match.value.player2_name
           match.value.player2_name = player2.name
           match.value.player2_id = player2.id // 确保ID类型一致
+          if (oldName !== player2.name) {
+            console.log('📝 更新player2名字:', oldName, '->', player2.name, 'ID:', player2.id)
+          }
+        } else {
+          console.warn('⚠️ 未找到player2，ID:', match.value.player2_id, '名字:', match.value.player2_name)
         }
       }
     }
+    
+    // 验证group信息
+    console.log('📋 最终比赛数据:', {
+      id: match.value.id,
+      group: match.value.group,
+      player1_id: match.value.player1_id,
+      player1_name: match.value.player1_name,
+      player2_id: match.value.player2_id,
+      player2_name: match.value.player2_name,
+      tournament_id: match.value.tournament_id
+    })
     
     console.log('📋 加载的比赛数据:', {
       id: match.value.id,
@@ -2259,9 +2407,154 @@ async function loadMatch() {
     
     // 初始化统计数据
     initStats()
+    
+    // 尝试锁定比赛
+    await tryLockMatch()
   } catch (error) {
     console.error('加载比赛失败:', error)
     showFailToast('加载失败：' + error.message)
+  }
+}
+
+// 尝试锁定比赛
+async function tryLockMatch() {
+  if (!match.value || !userStore.user) {
+    return
+  }
+  
+  const matchId = match.value.id
+  const userId = userStore.user.id || userStore.user.username
+  const userName = userStore.user.username || userStore.user.name || '未知用户'
+  
+  try {
+    const result = await storage.lockMatch(matchId, userId, userName)
+    
+    if (result.success) {
+      matchLockInfo.value = {
+        isLocked: true,
+        isLockedByMe: true,
+        lockedBy: userName,
+        userId: userId
+      }
+      console.log('✅ 成功锁定比赛')
+      
+      // 启动锁定刷新定时器（每2分钟刷新一次）
+      startLockRefresh()
+    } else {
+      matchLockInfo.value = {
+        isLocked: true,
+        isLockedByMe: false,
+        lockedBy: result.lockedBy || '其他用户',
+        userId: result.userId
+      }
+      console.warn('⚠️ 比赛已被其他用户锁定:', result.lockedBy)
+      showFailToast(result.message || '该比赛正在被其他用户锁定')
+      
+      // 启动锁定检查定时器（每5秒检查一次）
+      startLockCheck()
+    }
+  } catch (error) {
+    console.error('❌ 锁定比赛失败:', error)
+    // 锁定失败不影响查看，只是不能操作
+  }
+}
+
+// 启动锁定刷新定时器
+function startLockRefresh() {
+  if (lockRefreshInterval) {
+    clearInterval(lockRefreshInterval)
+  }
+  
+  lockRefreshInterval = setInterval(async () => {
+    if (match.value && matchLockInfo.value.isLockedByMe && userStore.user) {
+      const matchId = match.value.id
+      const userId = userStore.user.id || userStore.user.username
+      
+      try {
+        await storage.refreshMatchLock(matchId, userId)
+        console.log('🔄 锁定已刷新')
+      } catch (error) {
+        console.error('❌ 刷新锁定失败:', error)
+      }
+    }
+  }, 2 * 60 * 1000) // 每2分钟刷新一次
+}
+
+// 启动锁定检查定时器
+function startLockCheck() {
+  if (lockCheckInterval) {
+    clearInterval(lockCheckInterval)
+  }
+  
+  lockCheckInterval = setInterval(async () => {
+    if (match.value) {
+      const matchId = match.value.id
+      const userId = userStore.user?.id || userStore.user?.username
+      
+      try {
+        const lockStatus = await storage.checkMatchLock(matchId)
+        
+        if (!lockStatus.isLocked) {
+          // 锁定已释放，尝试获取锁定
+          matchLockInfo.value.isLocked = false
+          await tryLockMatch()
+        } else if (lockStatus.userId === userId) {
+          // 锁定已变为自己的
+          matchLockInfo.value = {
+            isLocked: true,
+            isLockedByMe: true,
+            lockedBy: lockStatus.lockedBy,
+            userId: lockStatus.userId
+          }
+          // 切换到刷新模式
+          clearInterval(lockCheckInterval)
+          lockCheckInterval = null
+          startLockRefresh()
+        } else {
+          // 仍然被其他用户锁定
+          matchLockInfo.value = {
+            isLocked: true,
+            isLockedByMe: false,
+            lockedBy: lockStatus.lockedBy,
+            userId: lockStatus.userId
+          }
+        }
+      } catch (error) {
+        console.error('❌ 检查锁定状态失败:', error)
+      }
+    }
+  }, 5 * 1000) // 每5秒检查一次
+}
+
+// 释放锁定
+async function releaseLock() {
+  if (match.value && matchLockInfo.value.isLockedByMe && userStore.user) {
+    const matchId = match.value.id
+    const userId = userStore.user.id || userStore.user.username
+    
+    try {
+      await storage.unlockMatch(matchId, userId)
+      console.log('✅ 已释放锁定')
+    } catch (error) {
+      console.error('❌ 释放锁定失败:', error)
+    }
+  }
+  
+  // 清理定时器
+  if (lockRefreshInterval) {
+    clearInterval(lockRefreshInterval)
+    lockRefreshInterval = null
+  }
+  if (lockCheckInterval) {
+    clearInterval(lockCheckInterval)
+    lockCheckInterval = null
+  }
+  
+  matchLockInfo.value = {
+    isLocked: false,
+    isLockedByMe: false,
+    lockedBy: null,
+    userId: null
   }
 }
 
@@ -3023,16 +3316,27 @@ onMounted(() => {
   loadMatch()
 })
 
+// 页面卸载时释放锁定
+onBeforeUnmount(() => {
+  releaseLock()
+})
+
 // 监听路由变化，重新加载比赛数据（解决移动端跳转问题）
-watch(() => [route.params.id, route.query.tournament], ([newId, newTournamentId], [oldId, oldTournamentId]) => {
-  // 只有当ID或tournament_id发生变化时才重新加载
-  if (newId !== oldId || newTournamentId !== oldTournamentId) {
+watch(() => [route.params.id, route.query.tournament, route.query.group], ([newId, newTournamentId, newGroup], [oldId, oldTournamentId, oldGroup]) => {
+  // 只有当ID、tournament_id或group发生变化时才重新加载
+  if (newId !== oldId || newTournamentId !== oldTournamentId || newGroup !== oldGroup) {
     console.log('🔄 路由参数变化，重新加载比赛:', {
       oldId,
       newId,
       oldTournamentId,
-      newTournamentId
+      newTournamentId,
+      oldGroup,
+      newGroup
     })
+    
+    // 释放旧比赛的锁定
+    releaseLock()
+    
     // 先清空当前数据，避免显示旧数据
     match.value = null
     tournamentInfo.value = null
@@ -3051,6 +3355,25 @@ watch(() => [route.params.id, route.query.tournament], ([newId, newTournamentId]
   background: #f8fafc;
   padding-top: 46px;
   padding-bottom: 50px;
+}
+
+/* 锁定状态样式 */
+.locked-content {
+  opacity: 0.6;
+  pointer-events: none;
+  position: relative;
+}
+
+.locked-content::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.5);
+  z-index: 1;
+  pointer-events: none;
 }
 
 .content {

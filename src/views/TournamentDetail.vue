@@ -533,13 +533,27 @@ function handleEditTournament() {
 }
 
 function goToMatch(id) {
-  // 传递tournament_id，确保加载正确的比赛
+  // 传递tournament_id和group，确保加载正确的比赛
   const tournamentId = tournament.value?.id
-  if (tournamentId) {
-    router.push(`/match/${id}?tournament=${tournamentId}`)
-  } else {
+  if (!tournamentId) {
     router.push(`/match/${id}`)
+    return
   }
+  
+  // 查找match对象以获取group信息
+  const match = tournament.value?.matches?.find(m => {
+    const mId = m.id
+    return mId === id || String(mId) === String(id) || Number(mId) === Number(id)
+  })
+  
+  // 构建查询参数
+  const queryParams = new URLSearchParams()
+  queryParams.set('tournament', tournamentId)
+  if (match?.group) {
+    queryParams.set('group', match.group)
+  }
+  
+  router.push(`/match/${id}?${queryParams.toString()}`)
 }
 
 // 获取所有比赛的小组列表
