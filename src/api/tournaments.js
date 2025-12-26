@@ -46,7 +46,8 @@ export async function createTournament(tournamentData) {
   if (USE_LOCAL_STORAGE) {
     try {
       console.log('📝 开始创建比赛:', tournamentData)
-      const tournaments = await storage.getTournaments()
+      const result = await storage.getTournaments()
+      const tournaments = result.data || (Array.isArray(result) ? result : [])
       
       // 统一字段名（前端用驼峰，后端用下划线）
       const startDate = tournamentData.startDate || ''
@@ -79,7 +80,8 @@ export async function createTournament(tournamentData) {
       console.log('💾 保存结果:', saveResult)
       
       // 验证保存是否成功
-      const verifyTournaments = await storage.getTournaments()
+      const verifyResult = await storage.getTournaments()
+      const verifyTournaments = verifyResult.data || (Array.isArray(verifyResult) ? verifyResult : [])
       console.log('🔍 验证数据，当前比赛数:', verifyTournaments.length)
       
       return Promise.resolve({
@@ -102,15 +104,15 @@ export async function createTournament(tournamentData) {
 
 export async function updateTournament(id, updates) {
   if (USE_LOCAL_STORAGE) {
-    const tournament = await storage.getTournament(id)
-    if (!tournament) {
+    const result = await storage.getTournament(id)
+    if (!result.success || !result.data) {
       return Promise.resolve({
         success: false,
-        message: '比赛不存在'
+        message: result.message || '比赛不存在'
       })
     }
     
-    const updated = { ...tournament, ...updates }
+    const updated = { ...result.data, ...updates }
     await storage.saveTournament(updated)
     
     return Promise.resolve({
