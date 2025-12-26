@@ -6,13 +6,93 @@ const DATA_KEY = 'tennis_tournament_data'
 // 全局内存存储（作为降级方案）
 let memoryStore = {}
 
+// Redis 客户端缓存（在同一个函数实例中复用）
+let redisClient = null
+
 // 获取 KV 客户端
 async function getKV() {
-  // 方案1: 尝试使用 @vercel/kv（推荐，但需要 REST API 环境变量）
+  // 方案1: 使用 redis 包配合 REDIS_URL（优先，因为你有 REDIS_URL）
+  if (process.env.REDIS_URL) {
+    try {
+      const redis = require('redis')
+      
+      // 如果客户端已存在且已连接，直接使用
+      if (redisClient && redisClient.isOpen) {
+        console.log('✅ 复用现有 Redis 连接')
+      } else {
+        // 创建新连接
+        redisClient = redis.createClient({
+          url: process.env.REDIS_URL,
+          socket: {
+            connectTimeout: 10000,
+            reconnectStrategy: false
+          }
+        })
+
+        // 连接 Redis
+        if (!redisClient.isOpen) {
+          await redisClient.connect()
+        }
+        console.log('✅ Redis 客户端已连接')
+      }
+
+      return {
+        get: async (key) => {
+          try {
+            if (!redisClient.isOpen) {
+              await redisClient.connect()
+            }
+            const value = await redisClient.get(key)
+            if (!value) return null
+            return JSON.parse(value)
+          } catch (err) {
+            console.error('Redis GET 错误:', err.message)
+            // 如果连接断开，尝试重连
+            if (!redisClient.isOpen) {
+              try {
+                await redisClient.connect()
+                const value = await redisClient.get(key)
+                return value ? JSON.parse(value) : null
+              } catch (retryErr) {
+                console.error('Redis 重连失败:', retryErr.message)
+                return null
+              }
+            }
+            return null
+          }
+        },
+        set: async (key, value) => {
+          try {
+            if (!redisClient.isOpen) {
+              await redisClient.connect()
+            }
+            await redisClient.set(key, JSON.stringify(value))
+          } catch (err) {
+            console.error('Redis SET 错误:', err.message)
+            // 如果连接断开，尝试重连
+            if (!redisClient.isOpen) {
+              try {
+                await redisClient.connect()
+                await redisClient.set(key, JSON.stringify(value))
+              } catch (retryErr) {
+                console.error('Redis 重连失败:', retryErr.message)
+                throw retryErr
+              }
+            } else {
+              throw err
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ Redis 连接失败:', error.message)
+      console.error('错误详情:', error)
+    }
+  }
+
+  // 方案2: 尝试使用 @vercel/kv（备用方案）
   try {
     const { kv } = require('@vercel/kv')
-    // 测试连接
-    await kv.get('test')
     console.log('✅ 使用 @vercel/kv')
     return {
       get: async (key) => {
@@ -25,50 +105,6 @@ async function getKV() {
     }
   } catch (e) {
     console.log('⚠️ @vercel/kv 不可用:', e.message)
-  }
-
-  // 方案2: 使用 redis 包配合 REDIS_URL
-  if (process.env.REDIS_URL) {
-    try {
-      const redis = require('redis')
-      const client = redis.createClient({
-        url: process.env.REDIS_URL,
-        socket: {
-          connectTimeout: 5000,
-          reconnectStrategy: false
-        }
-      })
-
-      // 连接 Redis
-      if (!client.isOpen) {
-        await client.connect()
-      }
-      
-      console.log('✅ 使用 redis 包连接 Redis')
-
-      return {
-        get: async (key) => {
-          try {
-            const value = await client.get(key)
-            if (!value) return null
-            return JSON.parse(value)
-          } catch (err) {
-            console.error('Redis GET 错误:', err.message)
-            return null
-          }
-        },
-        set: async (key, value) => {
-          try {
-            await client.set(key, JSON.stringify(value))
-          } catch (err) {
-            console.error('Redis SET 错误:', err.message)
-            throw err
-          }
-        }
-      }
-    } catch (error) {
-      console.error('❌ Redis 连接失败:', error.message)
-    }
   }
 
   // 方案3: 降级到内存存储（至少让应用能运行）
