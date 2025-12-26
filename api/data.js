@@ -1,55 +1,59 @@
 // Vercel Serverless Function - 数据存储API
-// 使用Vercel KV（Redis）作为数据库，免费且快速
+// 使用Vercel KV（Redis）作为数据库
 
-let kv = null
+const DATA_KEY = 'tennis_tournament_data'
 
-// 初始化 KV 客户端（每次请求都重新初始化，因为 Serverless Functions 是无状态的）
+// 全局内存存储（作为降级方案）
+let memoryStore = {}
+
+// 获取 KV 客户端
 async function getKV() {
-  if (kv) {
-    return kv
-  }
-
+  // 方案1: 尝试使用 @vercel/kv（推荐，但需要 REST API 环境变量）
   try {
-    // 优先尝试使用 @vercel/kv（需要 REST API 环境变量）
-    // @vercel/kv 会自动从环境变量读取 KV_REST_API_URL 和 KV_REST_API_TOKEN
-    const kvModule = require('@vercel/kv')
-    if (process.env.KV_REST_API_URL || process.env.REDIS_URL) {
-      kv = kvModule.kv
-      console.log('✅ 使用 @vercel/kv，环境变量:', {
-        hasRestApi: !!process.env.KV_REST_API_URL,
-        hasRedisUrl: !!process.env.REDIS_URL
-      })
-      return kv
-    } else {
-      console.warn('⚠️ @vercel/kv 需要环境变量 KV_REST_API_URL 或 REDIS_URL')
+    const { kv } = require('@vercel/kv')
+    // 测试连接
+    await kv.get('test')
+    console.log('✅ 使用 @vercel/kv')
+    return {
+      get: async (key) => {
+        const value = await kv.get(key)
+        return value || null
+      },
+      set: async (key, value) => {
+        await kv.set(key, value)
+      }
     }
   } catch (e) {
-    console.warn('@vercel/kv 不可用:', e.message)
+    console.log('⚠️ @vercel/kv 不可用:', e.message)
   }
 
-  try {
-    // 尝试使用 redis 包配合 REDIS_URL
-    const redis = require('redis')
-    const redisUrl = process.env.REDIS_URL
-    
-    if (redisUrl) {
+  // 方案2: 使用 redis 包配合 REDIS_URL
+  if (process.env.REDIS_URL) {
+    try {
+      const redis = require('redis')
       const client = redis.createClient({
-        url: redisUrl,
+        url: process.env.REDIS_URL,
         socket: {
-          reconnectStrategy: false // Serverless 环境中禁用自动重连
+          connectTimeout: 5000,
+          reconnectStrategy: false
         }
       })
 
-      await client.connect()
-      console.log('✅ Redis 客户端已连接')
+      // 连接 Redis
+      if (!client.isOpen) {
+        await client.connect()
+      }
+      
+      console.log('✅ 使用 redis 包连接 Redis')
 
-      kv = {
+      return {
         get: async (key) => {
           try {
             const value = await client.get(key)
-            return value ? JSON.parse(value) : null
+            if (!value) return null
+            return JSON.parse(value)
           } catch (err) {
-            console.error('Redis GET 错误:', err)
+            console.error('Redis GET 错误:', err.message)
             return null
           }
         },
@@ -57,67 +61,57 @@ async function getKV() {
           try {
             await client.set(key, JSON.stringify(value))
           } catch (err) {
-            console.error('Redis SET 错误:', err)
+            console.error('Redis SET 错误:', err.message)
             throw err
           }
         }
       }
-      return kv
+    } catch (error) {
+      console.error('❌ Redis 连接失败:', error.message)
     }
-  } catch (error) {
-    console.error('❌ Redis 初始化失败:', error.message)
   }
 
-  // 降级到内存存储（临时方案，数据不会持久化）
-  console.warn('⚠️ 使用内存存储（数据不会持久化）')
-  let memoryStore = {}
-  kv = {
-    get: async (key) => memoryStore[key] || null,
-    set: async (key, value) => { memoryStore[key] = value }
+  // 方案3: 降级到内存存储（至少让应用能运行）
+  console.warn('⚠️ 使用内存存储（数据不会持久化，仅用于测试）')
+  return {
+    get: async (key) => {
+      return memoryStore[key] || null
+    },
+    set: async (key, value) => {
+      memoryStore[key] = value
+    }
   }
-  return kv
 }
 
-const DATA_KEY = 'tennis_tournament_data'
-
 module.exports = async function handler(req, res) {
-  // 设置CORS头，允许跨域请求
+  // 设置CORS头
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
-  // 处理OPTIONS请求（CORS预检）
+  // 处理OPTIONS请求
   if (req.method === 'OPTIONS') {
     return res.status(200).end()
   }
 
   try {
-    // 获取 KV 客户端
-    const kvClient = await getKV()
+    const kv = await getKV()
     
     if (req.method === 'GET') {
-      // 获取所有数据
-      const data = await kvClient.get(DATA_KEY)
+      const data = await kv.get(DATA_KEY)
       
-      if (!data) {
-        // 如果没有数据，返回空数据
-        return res.status(200).json({
-          success: true,
-          data: {
-            tournaments: [],
-            users: [],
-            matches: [],
-            lastSync: null
-          }
-        })
-      }
-
       return res.status(200).json({
         success: true,
-        data: data
+        data: data || {
+          tournaments: [],
+          users: [],
+          matches: [],
+          lastSync: null
+        }
       })
-    } else if (req.method === 'POST') {
-      // 保存所有数据
+    } 
+    
+    if (req.method === 'POST') {
       const { tournaments, users, matches, lastSync } = req.body
 
       const data = {
@@ -127,25 +121,26 @@ module.exports = async function handler(req, res) {
         lastSync: lastSync || new Date().toISOString()
       }
 
-      await kvClient.set(DATA_KEY, data)
+      await kv.set(DATA_KEY, data)
 
       return res.status(200).json({
         success: true,
         message: '数据保存成功',
         data: data
       })
-    } else {
-      return res.status(405).json({
-        success: false,
-        message: '方法不允许'
-      })
     }
+    
+    return res.status(405).json({
+      success: false,
+      message: '方法不允许'
+    })
   } catch (error) {
-    console.error('API错误:', error)
+    console.error('❌ API错误:', error)
+    console.error('错误堆栈:', error.stack)
     return res.status(500).json({
       success: false,
-      message: '服务器错误: ' + error.message
+      message: '服务器错误: ' + error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     })
   }
 }
-
