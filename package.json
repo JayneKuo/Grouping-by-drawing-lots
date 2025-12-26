@@ -1,0 +1,40 @@
+{
+  "name": "tennis-tournament-manager",
+  "version": "2.0.0",
+  "description": "球搭子网球赛事管理系统",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "server": "node backend/server.js",
+    "server-simple": "node backend/server-simple.js",
+    "start": "concurrently \"npm run dev\" \"npm run server-simple\"",
+    "start-full": "concurrently \"npm run dev\" \"npm run server\"",
+    "deploy": "npm run build && firebase deploy --only hosting"
+  },
+  "dependencies": {
+    "@vant/touch-emulator": "^1.4.0",
+    "@vercel/kv": "^0.2.4",
+    "axios": "^1.6.2",
+    "firebase": "^10.14.1",
+    "pinia": "^2.1.7",
+    "vant": "^4.8.0",
+    "vue": "^3.4.0",
+    "vue-router": "^4.2.5"
+  },
+  "devDependencies": {
+    "@vercel/node": "^3.0.0",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "concurrently": "^8.2.2",
+    "vite": "^5.0.8"
+  },
+  "keywords": [
+    "tennis",
+    "tournament",
+    "management",
+    "vue3",
+    "vant"
+  ],
+  "author": "",
+  "license": "MIT"
+}

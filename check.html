@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>检查模块加载</title>
+</head>
+<body>
+    <h1>模块加载检查</h1>
+    <div id="check-results"></div>
+    
+    <script>
+        const results = [];
+        
+        function checkModule(name, checkFn) {
+            try {
+                if (checkFn()) {
+                    results.push(`✅ ${name} 加载成功`);
+                } else {
+                    results.push(`❌ ${name} 未定义`);
+                }
+            } catch (e) {
+                results.push(`❌ ${name} 加载失败: ${e.message}`);
+            }
+        }
+        
+        // 按顺序加载模块
+        const scripts = [
+            'js/config.js',
+            'js/utils.js',
+            'js/cache.js',
+            'js/auth.js',
+            'js/scoring.js',
+            'js/ranking.js',
+            'js/app.js'
+        ];
+        
+        let loaded = 0;
+        scripts.forEach((src, index) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = () => {
+                loaded++;
+                if (loaded === scripts.length) {
+                    // 所有模块加载完成后检查
+                    setTimeout(() => {
+                        checkModule('CONFIG', () => typeof CONFIG !== 'undefined');
+                        checkModule('Utils', () => typeof Utils !== 'undefined');
+                        checkModule('Cache', () => typeof Cache !== 'undefined');
+                        checkModule('Auth', () => typeof Auth !== 'undefined');
+                        checkModule('Scoring', () => typeof Scoring !== 'undefined');
+                        checkModule('Ranking', () => typeof Ranking !== 'undefined');
+                        checkModule('App', () => typeof App !== 'undefined');
+                        
+                        document.getElementById('check-results').innerHTML = 
+                            '<pre>' + results.join('\n') + '</pre>';
+                    }, 100);
+                }
+            };
+            script.onerror = () => {
+                results.push(`❌ ${src} 加载失败（文件不存在或路径错误）`);
+                document.getElementById('check-results').innerHTML = 
+                    '<pre>' + results.join('\n') + '</pre>';
+            };
+            document.head.appendChild(script);
+        });
+    </script>
+</body>
+</html>
+

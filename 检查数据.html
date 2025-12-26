@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据检查工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background: #6366f1;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #4f46e5;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .error {
+            color: red;
+        }
+        .success {
+            color: green;
+        }
+    </style>
+</head>
+<body>
+    <h1>数据检查工具</h1>
+    
+    <div class="section">
+        <h2>1. 检查localStorage数据</h2>
+        <button onclick="checkLocalStorage()">检查localStorage</button>
+        <div id="localStorageResult"></div>
+    </div>
+    
+    <div class="section">
+        <h2>2. 清空localStorage（谨慎使用）</h2>
+        <button onclick="clearLocalStorage()" style="background: #ef4444;">清空localStorage</button>
+        <div id="clearResult"></div>
+    </div>
+    
+    <div class="section">
+        <h2>3. 导出数据</h2>
+        <button onclick="exportData()">导出数据</button>
+        <div id="exportResult"></div>
+    </div>
+    
+    <div class="section">
+        <h2>4. 导入数据</h2>
+        <input type="file" id="importFile" accept=".json" onchange="importData(event)">
+        <div id="importResult"></div>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'tennis_tournament_data';
+        
+        function checkLocalStorage() {
+            const resultDiv = document.getElementById('localStorageResult');
+            try {
+                const data = localStorage.getItem(STORAGE_KEY);
+                if (!data) {
+                    resultDiv.innerHTML = '<p class="error">❌ localStorage中没有数据</p>';
+                    return;
+                }
+                
+                const parsed = JSON.parse(data);
+                const tournamentCount = parsed.tournaments?.length || 0;
+                
+                resultDiv.innerHTML = `
+                    <p class="success">✅ 找到数据</p>
+                    <p>比赛数量: <strong>${tournamentCount}</strong></p>
+                    <p>最后同步时间: ${parsed.lastSync || '未知'}</p>
+                    <h3>比赛列表:</h3>
+                    <pre>${JSON.stringify(parsed.tournaments || [], null, 2)}</pre>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ 读取失败: ${error.message}</p>`;
+            }
+        }
+        
+        function clearLocalStorage() {
+            if (!confirm('确定要清空所有数据吗？此操作不可恢复！')) {
+                return;
+            }
+            
+            const resultDiv = document.getElementById('clearResult');
+            try {
+                localStorage.removeItem(STORAGE_KEY);
+                resultDiv.innerHTML = '<p class="success">✅ localStorage已清空</p>';
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ 清空失败: ${error.message}</p>`;
+            }
+        }
+        
+        function exportData() {
+            const resultDiv = document.getElementById('exportResult');
+            try {
+                const data = localStorage.getItem(STORAGE_KEY);
+                if (!data) {
+                    resultDiv.innerHTML = '<p class="error">❌ 没有数据可导出</p>';
+                    return;
+                }
+                
+                const blob = new Blob([data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `tennis-tournament-backup-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                resultDiv.innerHTML = '<p class="success">✅ 数据已导出</p>';
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ 导出失败: ${error.message}</p>`;
+            }
+        }
+        
+        function importData(event) {
+            const resultDiv = document.getElementById('importResult');
+            const file = event.target.files[0];
+            if (!file) {
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (!data.tournaments) {
+                        throw new Error('数据格式不正确');
+                    }
+                    
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+                    resultDiv.innerHTML = '<p class="success">✅ 数据导入成功！请刷新页面。</p>';
+                } catch (error) {
+                    resultDiv.innerHTML = `<p class="error">❌ 导入失败: ${error.message}</p>`;
+                }
+            };
+            reader.onerror = function() {
+                resultDiv.innerHTML = '<p class="error">❌ 文件读取失败</p>';
+            };
+            reader.readAsText(file);
+        }
+        
+        // 页面加载时自动检查
+        window.onload = function() {
+            checkLocalStorage();
+        };
+    </script>
+</body>
+</html>
+
