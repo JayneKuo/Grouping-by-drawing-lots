@@ -8,7 +8,9 @@ let kv
 try {
   // 动态导入，避免构建错误
   const kvModule = require('@vercel/kv')
+  // @vercel/kv 会自动从环境变量读取 REDIS_URL 或 KV_REST_API_URL
   kv = kvModule.kv
+  console.log('✅ Vercel KV 已初始化')
 } catch (e) {
   console.warn('@vercel/kv未安装，使用内存存储（仅用于开发）')
   // 开发环境使用内存存储
