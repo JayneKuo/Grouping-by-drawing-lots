@@ -191,7 +191,9 @@ function goToRankingDetail(tournamentId) {
 
 async function loadRankings() {
   try {
-    const tournamentList = await storage.getTournaments()
+    const tournamentListResult = await storage.getTournaments()
+    // 处理返回的数据格式：可能是对象 { data: [...] } 或数组
+    const tournamentList = tournamentListResult.data || (Array.isArray(tournamentListResult) ? tournamentListResult : [])
     tournaments.value = tournamentList.filter(t => 
       t.players && t.players.length > 0 && t.matches && t.matches.length > 0
     )

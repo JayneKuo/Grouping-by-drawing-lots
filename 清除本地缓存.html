@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>清除本地缓存</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .info {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        button {
+            background: #ff4444;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #cc0000;
+        }
+        .success {
+            color: green;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>清除本地缓存</h1>
+    
+    <div class="info">
+        <h3>当前缓存数据：</h3>
+        <pre id="cacheData">加载中...</pre>
+    </div>
+    
+    <button onclick="clearCache()">清除所有缓存</button>
+    
+    <div id="result"></div>
+    
+    <script>
+        // 显示当前缓存
+        function showCache() {
+            const data = localStorage.getItem('tennis_tournament_data');
+            if (data) {
+                try {
+                    const parsed = JSON.parse(data);
+                    document.getElementById('cacheData').textContent = JSON.stringify(parsed, null, 2);
+                } catch (e) {
+                    document.getElementById('cacheData').textContent = '数据格式错误';
+                }
+            } else {
+                document.getElementById('cacheData').textContent = '没有缓存数据';
+            }
+        }
+        
+        // 清除缓存
+        function clearCache() {
+            if (confirm('确定要清除所有本地缓存吗？这不会影响服务器上的数据。')) {
+                localStorage.removeItem('tennis_tournament_data');
+                document.getElementById('result').innerHTML = '<div class="success">✅ 缓存已清除！请刷新应用页面。</div>';
+                showCache();
+            }
+        }
+        
+        // 页面加载时显示缓存
+        showCache();
+    </script>
+</body>
+</html>
+

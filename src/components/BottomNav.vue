@@ -1,6 +1,6 @@
 <template>
   <van-tabbar v-model="active" @change="onChange" fixed placeholder>
-    <van-tabbar-item icon="home-o" to="/tournaments">比赛</van-tabbar-item>
+    <van-tabbar-item icon="home-o" to="/tournaments">赛事</van-tabbar-item>
     <van-tabbar-item icon="calendar-o" to="/schedule">赛程</van-tabbar-item>
     <van-tabbar-item icon="medal-o" to="/ranking">排名</van-tabbar-item>
     <van-tabbar-item icon="user-o" to="/profile">我的</van-tabbar-item>

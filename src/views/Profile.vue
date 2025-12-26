@@ -1,6 +1,6 @@
 <template>
   <div class="profile">
-    <van-nav-bar title="我的" />
+    <van-nav-bar title="我的" fixed />
     
     <div class="content">
       <van-cell-group inset>

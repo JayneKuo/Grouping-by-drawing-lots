@@ -185,7 +185,9 @@ function getUngroupedMatches(tournamentId, status) {
 
 async function loadSchedule() {
   try {
-    const tournamentList = await storage.getTournaments()
+    const tournamentListResult = await storage.getTournaments()
+    // 处理返回的数据格式：可能是对象 { data: [...] } 或数组
+    const tournamentList = tournamentListResult.data || (Array.isArray(tournamentListResult) ? tournamentListResult : [])
     // 只显示有比赛数据的比赛
     tournaments.value = tournamentList.filter(t => t.matches && t.matches.length > 0)
     

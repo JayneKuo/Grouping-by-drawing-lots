@@ -47,9 +47,12 @@ const router = useRouter()
 const userStore = useUserStore()
 
 function goToLogin() {
+  console.log('点击开始使用按钮，当前登录状态:', userStore.isLoggedIn)
   if (userStore.isLoggedIn) {
+    console.log('已登录，跳转到赛事列表')
     router.push('/tournaments')
   } else {
+    console.log('未登录，跳转到登录页')
     router.push('/login')
   }
 }

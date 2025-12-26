@@ -124,16 +124,39 @@ export function recordPoint(match, playerIndex, scoringMethod = 'no-ad', format 
         winner = p1Points > p2Points ? 0 : 1
       }
     } else {
-      // 占先制：需要领先2分
+      // 占先制（AD）：需要领先2分
+      // 占先制规则：
+      // 1. 先到4分且领先2分，直接获胜
+      // 2. 40-40（Deuce）时，下一分领先者获得Ad（占先），需要再得1分才能获胜
+      // 3. Ad时如果失分，回到40-40（Deuce）
       if (p1Points >= 4 && p1Points - p2Points >= 2) {
+        // 先到4分且领先2分，直接获胜
         gameWon = true
         winner = 0
       } else if (p2Points >= 4 && p2Points - p1Points >= 2) {
+        // 先到4分且领先2分，直接获胜
         gameWon = true
         winner = 1
       } else if (p1Points >= 3 && p2Points >= 3) {
-        // Deuce情况：40-40
-        // 如果设置了金球，下一分直接决定胜负
+        // Deuce情况（40-40）
+        if (p1Points === p2Points) {
+          // 仍然是40-40，不结束
+          gameWon = false
+        } else if (p1Points > p2Points && p1Points >= 4) {
+          // Player1占先（Ad），且领先1分，需要再得1分才能获胜
+          // 如果已经是Ad且领先1分，再得1分就获胜（领先2分）
+          if (p1Points - p2Points >= 2) {
+            gameWon = true
+            winner = 0
+          }
+        } else if (p2Points > p1Points && p2Points >= 4) {
+          // Player2占先（Ad），且领先1分，需要再得1分才能获胜
+          if (p2Points - p1Points >= 2) {
+            gameWon = true
+            winner = 1
+          }
+        }
+        // 如果设置了金球，下一分直接决定胜负（覆盖占先规则）
         if (isGoldenPointSituation && p1Points !== p2Points) {
           gameWon = true
           winner = p1Points > p2Points ? 0 : 1
@@ -226,11 +249,37 @@ export function recordPoint(match, playerIndex, scoringMethod = 'no-ad', format 
  * @param {Number} winnerIndex 获胜选手索引
  */
 function finishSet(match, winnerIndex, format = null) {
+  // 如果比赛已经结束，直接返回，防止快速点击导致创建超过限制的盘数
+  if (match.status === 'finished') {
+    return
+  }
+  
   if (!match.sets) {
     match.sets = []
   }
   
   const set = match.currentSet
+  
+  // 检查比赛格式和盘数限制
+  const matchFormat = format || match.format || 'short-set'
+  let maxSets = 1
+  
+  if (matchFormat === 'best-of-3') {
+    maxSets = 3
+  } else if (matchFormat === 'best-of-5') {
+    maxSets = 5
+  }
+  
+  // 如果已经达到最大盘数，不允许再创建新盘
+  if (match.sets.length >= maxSets) {
+    match.status = 'finished'
+    // 确定获胜者（已完成的最后一盘）
+    const player1Sets = match.sets.filter(s => s.winner === 'player1').length
+    const player2Sets = match.sets.filter(s => s.winner === 'player2').length
+    match.winner = player1Sets > player2Sets ? 'player1' : 'player2'
+    return
+  }
+  
   match.sets.push({
     player1Games: set.player1Games,
     player2Games: set.player2Games,
@@ -241,7 +290,6 @@ function finishSet(match, winnerIndex, format = null) {
   })
   
   // 检查比赛是否结束
-  const matchFormat = format || match.format || 'short-set'
   let setsToWin = 1
   
   if (matchFormat === 'best-of-3') {
@@ -257,6 +305,13 @@ function finishSet(match, winnerIndex, format = null) {
     match.status = 'finished'
     match.winner = player1Sets >= setsToWin ? 'player1' : 'player2'
   } else {
+    // 检查是否超过最大盘数限制
+    if (match.sets.length >= maxSets) {
+      match.status = 'finished'
+      match.winner = player1Sets > player2Sets ? 'player1' : 'player2'
+      return
+    }
+    
     // 开始新的一盘
     // 第一盘由player1发球，之后每盘交替
     const setNumber = match.sets.length + 1
@@ -333,7 +388,7 @@ export function recordFirstServeFault(match, playerIndex) {
  * @param {String} scoringMethod 计分方式
  * @returns {Object} 更新后的比赛对象
  */
-export function recordDoubleFault(match, playerIndex, scoringMethod = 'no-ad') {
+export function recordDoubleFault(match, playerIndex, scoringMethod = 'no-ad', format = null) {
   if (!match.currentSet) {
     return match
   }
@@ -345,9 +400,9 @@ export function recordDoubleFault(match, playerIndex, scoringMethod = 'no-ad') {
     return match
   }
   
-  // 双误：接球方得分
+  // 双误：接球方得分（使用传入的format参数）
   const receiver = playerIndex === 0 ? 1 : 0
-  return recordPoint(match, receiver, scoringMethod)
+  return recordPoint(match, receiver, scoringMethod, format)
 }
 
 /**

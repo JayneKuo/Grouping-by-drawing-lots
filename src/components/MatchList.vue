@@ -13,12 +13,15 @@
       <div class="match-row-horizontal">
         <!-- 选手1 -->
         <div class="player-section player-left">
-          <img 
-            :src="getPlayerAvatar(match.player1_name, getPlayerGender(match.player1_id))" 
-            :alt="match.player1_name"
-            class="player-avatar"
-            @error="handleAvatarError"
-          />
+          <div class="player-avatar-wrapper">
+            <img 
+              :src="getPlayerAvatar(match.player1_name, getPlayerGender(match.player1_id))" 
+              :alt="match.player1_name"
+              class="player-avatar"
+              @error="handleAvatarError"
+            />
+            <span v-if="getPlayerNumber(match.player1_id)" class="avatar-number">{{ getPlayerNumber(match.player1_id) }}</span>
+          </div>
           <div class="player-name-wrapper">
             <span class="player-name">{{ match.player1_name }}</span>
             <van-icon 
@@ -49,12 +52,15 @@
               class="winner-star"
             />
           </div>
-          <img 
-            :src="getPlayerAvatar(match.player2_name, getPlayerGender(match.player2_id))" 
-            :alt="match.player2_name"
-            class="player-avatar"
-            @error="handleAvatarError"
-          />
+          <div class="player-avatar-wrapper">
+            <img 
+              :src="getPlayerAvatar(match.player2_name, getPlayerGender(match.player2_id))" 
+              :alt="match.player2_name"
+              class="player-avatar"
+              @error="handleAvatarError"
+            />
+            <span v-if="getPlayerNumber(match.player2_id)" class="avatar-number">{{ getPlayerNumber(match.player2_id) }}</span>
+          </div>
         </div>
       </div>
       
@@ -99,8 +105,13 @@ async function loadPlayers() {
   if (!props.tournamentId) return
   
   try {
-    const tournaments = await storage.getTournaments()
-    const tournament = tournaments.find(t => t.id === props.tournamentId)
+    const tournamentsResult = await storage.getTournaments()
+    const tournaments = tournamentsResult.data || (Array.isArray(tournamentsResult) ? tournamentsResult : [])
+    const tournament = tournaments.find(t => {
+      const tId = t.id
+      const pId = props.tournamentId
+      return tId === pId || String(tId) === String(pId) || Number(tId) === Number(pId)
+    })
     if (tournament) {
       tournamentCache.value = tournament
       if (tournament.players) {
@@ -133,6 +144,12 @@ function getPlayerGender(playerId) {
   if (!playerId) return undefined
   const player = playersCache.value[playerId]
   return player?.gender
+}
+
+function getPlayerNumber(playerId) {
+  if (!playerId) return null
+  const player = playersCache.value[playerId]
+  return player?.number || null
 }
 
 function getTotalScore(match) {
@@ -208,12 +225,24 @@ function getMatchLocation(match) {
 
 function goToMatch(match) {
   // 确保传递tournament_id，避免不同tournament中match ID重复的问题
+  // 优先使用match中的tournament_id，如果没有则使用props传入的
   const tournamentId = match.tournament_id || props.tournamentId
-  if (tournamentId) {
-    router.push(`/match/${match.id}?tournament=${tournamentId}`)
-  } else {
-    router.push(`/match/${match.id}`)
+  
+  if (!tournamentId) {
+    console.error('❌ 缺少tournament_id，无法跳转:', {
+      matchId: match.id,
+      matchTournamentId: match.tournament_id,
+      propsTournamentId: props.tournamentId
+    })
+    return
   }
+  
+  // 确保match对象包含tournament_id（如果缺失则补充）
+  if (!match.tournament_id && props.tournamentId) {
+    match.tournament_id = props.tournamentId
+  }
+  
+  router.push(`/match/${match.id}?tournament=${tournamentId}`)
 }
 </script>
 
@@ -262,13 +291,35 @@ function goToMatch(match) {
   flex-direction: row-reverse;
 }
 
+.player-avatar-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .player-avatar {
   width: 48px;
   height: 48px;
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid #e2e8f0;
-  flex-shrink: 0;
+}
+
+.avatar-number {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background: #3b82f6;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
+  line-height: 1;
 }
 
 .player-name-wrapper {

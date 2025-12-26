@@ -16,7 +16,8 @@ const userStore = useUserStore()
 
 // 显示底部导航的页面
 const showBottomNav = computed(() => {
-  const hideNavRoutes = ['/login', '/display']
+  // 隐藏底部导航的页面：首页、登录页、投屏页
+  const hideNavRoutes = ['/', '/login', '/display']
   return !hideNavRoutes.includes(route.path) && userStore.isLoggedIn
 })
 </script>

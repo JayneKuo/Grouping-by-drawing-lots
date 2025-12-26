@@ -125,3 +125,35 @@ export async function updateTournament(id, updates) {
   const request = require('./request').default
   return request.put(`/tournaments/${id}`, updates)
 }
+
+export async function deleteTournament(id) {
+  if (USE_LOCAL_STORAGE) {
+    try {
+      console.log('🗑️ 开始删除比赛，ID:', id)
+      const result = await storage.deleteTournament(id)
+      
+      if (result.success) {
+        console.log('✅ 比赛删除成功')
+        return Promise.resolve({
+          success: true,
+          message: '比赛删除成功'
+        })
+      } else {
+        console.error('❌ 比赛删除失败:', result.message)
+        return Promise.resolve({
+          success: false,
+          message: result.message || '删除失败'
+        })
+      }
+    } catch (error) {
+      console.error('❌ 删除比赛异常:', error)
+      return Promise.resolve({
+        success: false,
+        message: '删除失败：' + error.message
+      })
+    }
+  }
+  
+  const request = require('./request').default
+  return request.delete(`/tournaments/${id}`)
+}

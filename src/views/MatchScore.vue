@@ -1,29 +1,23 @@
 <template>
   <div class="match-score">
-    <van-nav-bar title="比赛详情" left-arrow @click-left="$router.back()">
-      <template #right>
-        <van-icon name="edit" size="20" @click="handleEditMatch" />
-      </template>
-    </van-nav-bar>
+    <van-nav-bar title="对战详情" left-arrow @click-left="$router.back()" fixed />
     
     <div class="content" v-if="match">
-      <!-- 比赛标题 -->
-      <div class="match-title-section">
-        <div class="match-title">{{ match.player1_name }} VS {{ match.player2_name }}</div>
-        <div class="match-info">{{ getMatchInfo() }}</div>
-      </div>
-      
       <!-- 比赛结果展示区域 -->
       <div class="match-result-area">
         <!-- 选手1 -->
         <div class="player-section player-left">
           <van-icon v-if="match.winner === 'player1'" name="star" color="#3b82f6" size="18" class="star-icon-left" />
-          <div 
-            class="player-avatar clickable-avatar" 
-            :class="{ 'disabled': match.status === 'finished' }"
-            @click="match.status !== 'finished' && recordPoint(0)"
-          >
-            <span class="avatar-text">{{ getPlayerInitial(match.player1_name) }}</span>
+          <div class="player-avatar-wrapper">
+            <img 
+              :src="getPlayerAvatar(match.player1_name, getPlayerGender(match.player1_id))" 
+              :alt="match.player1_name"
+              class="player-avatar clickable-avatar" 
+              :class="{ 'disabled': match.status === 'finished' }"
+              @click="match.status !== 'finished' && recordPoint(0)"
+              @error="handleAvatarError"
+            />
+            <span v-if="getPlayerNumber(match.player1_id)" class="avatar-number">{{ getPlayerNumber(match.player1_id) }}</span>
           </div>
           <div class="player-ranking">{{ getPlayerRanking(match.player1_id) }}</div>
           <div class="player-name">{{ match.player1_name }}</div>
@@ -45,18 +39,29 @@
           <div v-if="currentSet && currentSet.isTiebreak" class="match-score-tiebreak">
             抢七: {{ currentSet.tiebreakScore?.player1 || 0 }}-{{ currentSet.tiebreakScore?.player2 || 0 }}
           </div>
-          <div class="match-date-small">{{ formatMatchDateShort() }}</div>
+          <div class="match-date-small">
+            <div>{{ formatMatchDateShort() }}</div>
+            <!-- 比赛信息 -->
+            <div class="match-info-inline" v-if="match.group || tournamentInfo?.format">
+              <span v-if="match.group" class="info-inline-item">{{ match.group }}组</span>
+              <span v-if="tournamentInfo?.format" class="info-inline-item">{{ getFormatText(tournamentInfo.format) }}</span>
+            </div>
+          </div>
         </div>
         
         <!-- 选手2 -->
         <div class="player-section player-right">
           <van-icon v-if="match.winner === 'player2'" name="star" color="#3b82f6" size="18" class="star-icon-right" />
-          <div 
-            class="player-avatar clickable-avatar" 
-            :class="{ 'disabled': match.status === 'finished' }"
-            @click="match.status !== 'finished' && recordPoint(1)"
-          >
-            <span class="avatar-text">{{ getPlayerInitial(match.player2_name) }}</span>
+          <div class="player-avatar-wrapper">
+            <img 
+              :src="getPlayerAvatar(match.player2_name, getPlayerGender(match.player2_id))" 
+              :alt="match.player2_name"
+              class="player-avatar clickable-avatar" 
+              :class="{ 'disabled': match.status === 'finished' }"
+              @click="match.status !== 'finished' && recordPoint(1)"
+              @error="handleAvatarError"
+            />
+            <span v-if="getPlayerNumber(match.player2_id)" class="avatar-number">{{ getPlayerNumber(match.player2_id) }}</span>
           </div>
           <div class="player-ranking">{{ getPlayerRanking(match.player2_id) }}</div>
           <div class="player-name">{{ match.player2_name }}</div>
@@ -83,7 +88,7 @@
       
       <!-- 内容区域 -->
       <div class="match-content">
-        <!-- 比赛详情 - 比分 -->
+        <!-- 对战详情 - 比分 -->
         <div v-if="activeTab === 'match'" class="tab-content">
           <div class="scoreboard-container">
             <div class="scoreboard-title-bar">
@@ -113,6 +118,7 @@
               <div class="scoreboard-row" :class="{ 'serving': getCurrentServer() === 0 && currentSet && !currentSet.isTiebreak }">
                 <div class="row-player">
                   <span v-if="getCurrentServer() === 0 && currentSet && !currentSet.isTiebreak" class="serve-indicator">●</span>
+                  <span v-if="getPlayerNumber(match.player1_id)" class="player-number">{{ getPlayerNumber(match.player1_id) }}</span>
                   <span class="player-name">{{ match.player1_name.toUpperCase() }}</span>
                 </div>
                 <div class="row-sets">{{ getPlayer1SetsWon() }}</div>
@@ -125,7 +131,7 @@
                 </div>
                 <div class="row-points">
                   <span v-if="currentSet && !currentSet.isTiebreak">
-                    {{ formatPointDisplay(currentSet.player1Points || 0) }}
+                    {{ formatPointDisplay(currentSet.player1Points || 0, currentSet.player2Points || 0) }}
                   </span>
                   <span v-else-if="currentSet && currentSet.isTiebreak">
                     {{ currentSet.tiebreakScore?.player1 || 0 }}
@@ -138,6 +144,7 @@
               <div class="scoreboard-row" :class="{ 'serving': getCurrentServer() === 1 && currentSet && !currentSet.isTiebreak }">
                 <div class="row-player">
                   <span v-if="getCurrentServer() === 1 && currentSet && !currentSet.isTiebreak" class="serve-indicator">●</span>
+                  <span v-if="getPlayerNumber(match.player2_id)" class="player-number">{{ getPlayerNumber(match.player2_id) }}</span>
                   <span class="player-name">{{ match.player2_name.toUpperCase() }}</span>
                 </div>
                 <div class="row-sets">{{ getPlayer2SetsWon() }}</div>
@@ -150,7 +157,7 @@
                 </div>
                 <div class="row-points">
                   <span v-if="currentSet && !currentSet.isTiebreak">
-                    {{ formatPointDisplay(currentSet.player2Points || 0) }}
+                    {{ formatPointDisplay(currentSet.player2Points || 0, currentSet.player1Points || 0) }}
                   </span>
                   <span v-else-if="currentSet && currentSet.isTiebreak">
                     {{ currentSet.tiebreakScore?.player2 || 0 }}
@@ -256,6 +263,72 @@
                   <div class="stat-label-center">二发得分率</div>
                   <div class="stat-value-right highlight">{{ getSecondServeWinRate('player2', selectedStatisticsSet) }}</div>
                 </div>
+                
+                <!-- 挽救破发点成功率 -->
+                <div class="stat-row">
+                  <div class="stat-value-left">{{ getBreakPointsSaved('player1', selectedStatisticsSet) }}</div>
+                  <div class="stat-label-center">挽救破发点成功率</div>
+                  <div class="stat-value-right highlight">{{ getBreakPointsSaved('player2', selectedStatisticsSet) }}</div>
+                </div>
+              </div>
+              
+              <!-- 接发球统计 -->
+              <div class="stat-category">
+                <div class="category-header">接发球</div>
+                
+                <!-- 破发球得分率 -->
+                <div class="stat-row">
+                  <div class="stat-value-left">{{ getBreakPointsConverted('player1', selectedStatisticsSet) }}</div>
+                  <div class="stat-label-center">破发球得分率</div>
+                  <div class="stat-value-right highlight">{{ getBreakPointsConverted('player2', selectedStatisticsSet) }}</div>
+                </div>
+                
+                <!-- 一发接发球成功率 -->
+                <div class="stat-row">
+                  <div class="stat-value-left">{{ getFirstServeReturnWinRate('player1', selectedStatisticsSet) }}</div>
+                  <div class="stat-label-center">一发接发球成功率</div>
+                  <div class="stat-value-right highlight">{{ getFirstServeReturnWinRate('player2', selectedStatisticsSet) }}</div>
+                </div>
+                
+                <!-- 二发接发球成功率 -->
+                <div class="stat-row">
+                  <div class="stat-value-left">{{ getSecondServeReturnWinRate('player1', selectedStatisticsSet) }}</div>
+                  <div class="stat-label-center">二发接发球成功率</div>
+                  <div class="stat-value-right highlight">{{ getSecondServeReturnWinRate('player2', selectedStatisticsSet) }}</div>
+                </div>
+              </div>
+              
+              <!-- 积分统计 -->
+              <div class="stat-category">
+                <div class="category-header">积分</div>
+                
+                <!-- 总得分 -->
+                <div class="stat-row">
+                  <div class="stat-value-left">{{ getTotalPoints('player1', selectedStatisticsSet) }}</div>
+                  <div class="stat-label-center">总得分</div>
+                  <div class="stat-value-right highlight">{{ getTotalPoints('player2', selectedStatisticsSet) }}</div>
+                </div>
+                
+                <!-- 最高连续得分 -->
+                <div class="stat-row">
+                  <div class="stat-value-left">{{ getLongestStreak('player1', selectedStatisticsSet) }}</div>
+                  <div class="stat-label-center">最高连续得分</div>
+                  <div class="stat-value-right highlight">{{ getLongestStreak('player2', selectedStatisticsSet) }}</div>
+                </div>
+                
+                <!-- 发球得分 -->
+                <div class="stat-row">
+                  <div class="stat-value-left">{{ getServePointsWon('player1', selectedStatisticsSet) }}</div>
+                  <div class="stat-label-center">发球得分</div>
+                  <div class="stat-value-right highlight">{{ getServePointsWon('player2', selectedStatisticsSet) }}</div>
+                </div>
+                
+                <!-- 最近10局得分 -->
+                <div class="stat-row">
+                  <div class="stat-value-left">{{ getRecent10Points('player1', selectedStatisticsSet) }}</div>
+                  <div class="stat-label-center">最近10局得分</div>
+                  <div class="stat-value-right highlight">{{ getRecent10Points('player2', selectedStatisticsSet) }}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -268,7 +341,7 @@
         title="设置发球方"
         show-cancel-button
         @confirm="confirmServer"
-        @cancel="showServerDialog = false"
+        @cancel="handleCancelServer"
       >
         <div style="padding: 20px;" v-if="match">
           <van-radio-group v-model="selectedServer">
@@ -364,95 +437,97 @@
       <van-popup 
         v-model:show="showFullscreenScoreboard" 
         position="center"
-        :style="{ width: '95vw', height: '95vh', maxWidth: 'none', padding: '0' }"
+        :style="{ width: '100vw', height: '100vh', maxWidth: 'none', padding: '0' }"
         :close-on-click-overlay="true"
         class="fullscreen-scoreboard-popup landscape"
       >
-        <div class="fullscreen-page-container">
-          <!-- 全屏页面头部 -->
-          <div class="fullscreen-page-header">
-            <div class="fullscreen-title">{{ match?.player1_name }} VS {{ match?.player2_name }}</div>
-            <van-icon name="cross" class="close-icon" @click="closeFullscreenScoreboard" />
-          </div>
-          
-          <!-- 全屏页面导航 -->
-          <div class="fullscreen-nav-tabs">
-            <div 
-              class="fullscreen-nav-tab" 
-              :class="{ 'active': activeTab === 'match' }"
-              @click="activeTab = 'match'"
-            >
-              比赛
-            </div>
-            <div 
-              class="fullscreen-nav-tab" 
-              :class="{ 'active': activeTab === 'statistics' }"
-              @click="activeTab = 'statistics'"
-            >
-              资料统计
-            </div>
-          </div>
-          
+        <div class="fullscreen-page-container rotated-container">
            <!-- 全屏页面内容 -->
-           <div class="fullscreen-page-content">
-             <!-- 比赛详情 - 比分 -->
+           <div class="fullscreen-page-content rotated-content">
+             <!-- 对战详情 - 比分 -->
              <div v-if="activeTab === 'match'" class="fullscreen-tab-content">
-               <div class="digital-scoreboard fullscreen-version rotated-scoreboard">
-                <!-- 表头 -->
-                <div class="scoreboard-header">
-                  <div class="header-player">选手</div>
-                  <div class="header-sets">SETS</div>
-                  <div class="header-games">GAMES</div>
-                  <div class="header-points">POINTS</div>
+               <div class="rotated-scoreboard-wrapper">
+                 <!-- 左侧计分板 -->
+                 <div class="digital-scoreboard fullscreen-version rotated-scoreboard">
+                  <!-- 表头 -->
+                  <div class="scoreboard-header">
+                    <div class="header-item">
+                      <span class="header-label">选手</span>
+                    </div>
+                    <div class="header-item">
+                      <span class="header-label">SETS</span>
+                    </div>
+                    <div class="header-item">
+                      <span class="header-label">GAMES</span>
+                    </div>
+                    <div class="header-item">
+                      <span class="header-label">POINTS</span>
+                    </div>
+                  </div>
+                  
+                  <!-- 选手1行 -->
+                  <div class="scoreboard-row" :class="{ 'serving': getCurrentServer() === 0 && currentSet && !currentSet.isTiebreak }">
+                    <div class="row-item row-player">
+                      <span v-if="getCurrentServer() === 0 && currentSet && !currentSet.isTiebreak" class="serve-indicator">●</span>
+                      <span v-if="getPlayerNumber(match?.player1_id)" class="player-number">{{ getPlayerNumber(match?.player1_id) }}</span>
+                      <span class="player-name">{{ match?.player1_name }}</span>
+                    </div>
+                    <div class="row-item row-sets">{{ getPlayer1SetsWon() }}</div>
+                    <div class="row-item row-games">
+                      <span v-if="currentSet && !currentSet.isTiebreak">
+                        {{ currentSet.player1Games || 0 }}
+                      </span>
+                      <span v-else-if="currentSet && currentSet.isTiebreak">TB</span>
+                      <span v-else>-</span>
+                    </div>
+                    <div class="row-item row-points">
+                      <span v-if="currentSet && !currentSet.isTiebreak">
+                        {{ formatPointDisplay(currentSet.player1Points || 0, currentSet.player2Points || 0) }}
+                      </span>
+                      <span v-else-if="currentSet && currentSet.isTiebreak">
+                        {{ currentSet.tiebreakScore?.player1 || 0 }}
+                      </span>
+                      <span v-else>0</span>
+                    </div>
+                  </div>
+                  
+                  <!-- 选手2行 -->
+                  <div class="scoreboard-row" :class="{ 'serving': getCurrentServer() === 1 && currentSet && !currentSet.isTiebreak }">
+                    <div class="row-item row-player">
+                      <span v-if="getCurrentServer() === 1 && currentSet && !currentSet.isTiebreak" class="serve-indicator">●</span>
+                      <span v-if="getPlayerNumber(match?.player2_id)" class="player-number">{{ getPlayerNumber(match?.player2_id) }}</span>
+                      <span class="player-name">{{ match?.player2_name }}</span>
+                    </div>
+                    <div class="row-item row-sets">{{ getPlayer2SetsWon() }}</div>
+                    <div class="row-item row-games">
+                      <span v-if="currentSet && !currentSet.isTiebreak">
+                        {{ currentSet.player2Games || 0 }}
+                      </span>
+                      <span v-else-if="currentSet && currentSet.isTiebreak">TB</span>
+                      <span v-else>-</span>
+                    </div>
+                    <div class="row-item row-points">
+                      <span v-if="currentSet && !currentSet.isTiebreak">
+                        {{ formatPointDisplay(currentSet.player2Points || 0, currentSet.player1Points || 0) }}
+                      </span>
+                      <span v-else-if="currentSet && currentSet.isTiebreak">
+                        {{ currentSet.tiebreakScore?.player2 || 0 }}
+                      </span>
+                      <span v-else>0</span>
+                    </div>
+                  </div>
                 </div>
                 
-                <!-- 选手1行 -->
-                <div class="scoreboard-row" :class="{ 'serving': getCurrentServer() === 0 && currentSet && !currentSet.isTiebreak }">
-                  <div class="row-player">
-                    <span v-if="getCurrentServer() === 0 && currentSet && !currentSet.isTiebreak" class="serve-indicator">●</span>
-                    <span class="player-name">{{ match?.player1_name?.toUpperCase() }}</span>
+                <!-- 右侧选手信息栏 -->
+                <div class="rotated-player-info-bar">
+                  <div class="player-info-item player-info-1">
+                    <div class="player-info-name">{{ match?.player1_name }}</div>
                   </div>
-                  <div class="row-sets">{{ getPlayer1SetsWon() }}</div>
-                  <div class="row-games">
-                    <span v-if="currentSet && !currentSet.isTiebreak">
-                      {{ currentSet.player1Games || 0 }}
-                    </span>
-                    <span v-else-if="currentSet && currentSet.isTiebreak">TB</span>
-                    <span v-else>-</span>
+                  <div class="player-info-item player-info-2">
+                    <div class="player-info-name">{{ match?.player2_name }}</div>
                   </div>
-                  <div class="row-points">
-                    <span v-if="currentSet && !currentSet.isTiebreak">
-                      {{ formatPointDisplay(currentSet.player1Points || 0) }}
-                    </span>
-                    <span v-else-if="currentSet && currentSet.isTiebreak">
-                      {{ currentSet.tiebreakScore?.player1 || 0 }}
-                    </span>
-                    <span v-else>0</span>
-                  </div>
-                </div>
-                
-                <!-- 选手2行 -->
-                <div class="scoreboard-row" :class="{ 'serving': getCurrentServer() === 1 && currentSet && !currentSet.isTiebreak }">
-                  <div class="row-player">
-                    <span v-if="getCurrentServer() === 1 && currentSet && !currentSet.isTiebreak" class="serve-indicator">●</span>
-                    <span class="player-name">{{ match?.player2_name?.toUpperCase() }}</span>
-                  </div>
-                  <div class="row-sets">{{ getPlayer2SetsWon() }}</div>
-                  <div class="row-games">
-                    <span v-if="currentSet && !currentSet.isTiebreak">
-                      {{ currentSet.player2Games || 0 }}
-                    </span>
-                    <span v-else-if="currentSet && currentSet.isTiebreak">TB</span>
-                    <span v-else>-</span>
-                  </div>
-                  <div class="row-points">
-                    <span v-if="currentSet && !currentSet.isTiebreak">
-                      {{ formatPointDisplay(currentSet.player2Points || 0) }}
-                    </span>
-                    <span v-else-if="currentSet && currentSet.isTiebreak">
-                      {{ currentSet.tiebreakScore?.player2 || 0 }}
-                    </span>
-                    <span v-else>0</span>
+                  <div class="close-button-rotated" @click="closeFullscreenScoreboard">
+                    <van-icon name="cross" />
                   </div>
                 </div>
               </div>
@@ -529,6 +604,72 @@
                       <div class="stat-label-center">二发得分率</div>
                       <div class="stat-value-right highlight">{{ getSecondServeWinRate('player2', selectedStatisticsSet) }}</div>
                     </div>
+                    
+                    <!-- 挽救破发点成功率 -->
+                    <div class="stat-row">
+                      <div class="stat-value-left">{{ getBreakPointsSaved('player1', selectedStatisticsSet) }}</div>
+                      <div class="stat-label-center">挽救破发点成功率</div>
+                      <div class="stat-value-right highlight">{{ getBreakPointsSaved('player2', selectedStatisticsSet) }}</div>
+                    </div>
+                  </div>
+                  
+                  <!-- 接发球统计 -->
+                  <div class="stat-category">
+                    <div class="category-header">接发球</div>
+                    
+                    <!-- 破发球得分率 -->
+                    <div class="stat-row">
+                      <div class="stat-value-left">{{ getBreakPointsConverted('player1', selectedStatisticsSet) }}</div>
+                      <div class="stat-label-center">破发球得分率</div>
+                      <div class="stat-value-right highlight">{{ getBreakPointsConverted('player2', selectedStatisticsSet) }}</div>
+                    </div>
+                    
+                    <!-- 一发接发球成功率 -->
+                    <div class="stat-row">
+                      <div class="stat-value-left">{{ getFirstServeReturnWinRate('player1', selectedStatisticsSet) }}</div>
+                      <div class="stat-label-center">一发接发球成功率</div>
+                      <div class="stat-value-right highlight">{{ getFirstServeReturnWinRate('player2', selectedStatisticsSet) }}</div>
+                    </div>
+                    
+                    <!-- 二发接发球成功率 -->
+                    <div class="stat-row">
+                      <div class="stat-value-left">{{ getSecondServeReturnWinRate('player1', selectedStatisticsSet) }}</div>
+                      <div class="stat-label-center">二发接发球成功率</div>
+                      <div class="stat-value-right highlight">{{ getSecondServeReturnWinRate('player2', selectedStatisticsSet) }}</div>
+                    </div>
+                  </div>
+                  
+                  <!-- 积分统计 -->
+                  <div class="stat-category">
+                    <div class="category-header">积分</div>
+                    
+                    <!-- 总得分 -->
+                    <div class="stat-row">
+                      <div class="stat-value-left">{{ getTotalPoints('player1', selectedStatisticsSet) }}</div>
+                      <div class="stat-label-center">总得分</div>
+                      <div class="stat-value-right highlight">{{ getTotalPoints('player2', selectedStatisticsSet) }}</div>
+                    </div>
+                    
+                    <!-- 最高连续得分 -->
+                    <div class="stat-row">
+                      <div class="stat-value-left">{{ getLongestStreak('player1', selectedStatisticsSet) }}</div>
+                      <div class="stat-label-center">最高连续得分</div>
+                      <div class="stat-value-right highlight">{{ getLongestStreak('player2', selectedStatisticsSet) }}</div>
+                    </div>
+                    
+                    <!-- 发球得分 -->
+                    <div class="stat-row">
+                      <div class="stat-value-left">{{ getServePointsWon('player1', selectedStatisticsSet) }}</div>
+                      <div class="stat-label-center">发球得分</div>
+                      <div class="stat-value-right highlight">{{ getServePointsWon('player2', selectedStatisticsSet) }}</div>
+                    </div>
+                    
+                    <!-- 最近10局得分 -->
+                    <div class="stat-row">
+                      <div class="stat-value-left">{{ getRecent10Points('player1', selectedStatisticsSet) }}</div>
+                      <div class="stat-label-center">最近10局得分</div>
+                      <div class="stat-value-right highlight">{{ getRecent10Points('player2', selectedStatisticsSet) }}</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -537,188 +678,149 @@
         </div>
       </van-popup>
       
-      <!-- 保存按钮（吸底） -->
+      <!-- 保存和撤销按钮（吸底，同一行） -->
       <div class="save-button-fixed">
-        <van-button 
-          type="success" 
-          size="large" 
-          block 
-          round
-          @click="saveScore"
-          :loading="saving"
-          :disabled="match.status === 'finished'"
-        >
-          保存比分
-        </van-button>
-      </div>
-      
-      <!-- 选手操作按钮组（每个选手独立） -->
-      <div class="player-actions">
-        <!-- 选手1操作区 -->
-        <div class="player-action-group player1-group">
-          <div class="player-action-title">{{ match.player1_name }}</div>
-          <div class="player-action-buttons">
-            <div 
-              class="action-btn btn-score" 
-              :class="{ 'disabled': match.status === 'finished' }"
-              @click="recordPoint(0)"
-            >
-              <van-icon name="medal-o" />
-              <span>得分</span>
-            </div>
-            <div 
-              class="action-btn btn-ace" 
-              :class="{ 
-                'disabled': match.status === 'finished' || !isPlayerServer(0),
-                'not-server': !isPlayerServer(0)
-              }"
-              @click="recordAceForPlayer(0)"
-            >
-              <van-icon name="star-o" />
-              <span>ACE</span>
-            </div>
-            <div 
-              class="action-btn btn-double-fault" 
-              :class="{ 
-                'disabled': match.status === 'finished' || !isPlayerServer(0),
-                'not-server': !isPlayerServer(0)
-              }"
-              @click="recordDoubleFaultForPlayer(0)"
-            >
-              <van-icon name="cross" />
-              <span>双误</span>
-            </div>
-            <div 
-              class="action-btn btn-first-fault" 
-              :class="{ 
-                'disabled': match.status === 'finished' || !isPlayerServer(0),
-                'not-server': !isPlayerServer(0)
-              }"
-              @click="recordFirstServeFault(0)"
-            >
-              <van-icon name="close" />
-              <span>一发失误</span>
-            </div>
-            <div 
-              class="action-btn btn-serve-out" 
-              :class="{ 
-                'disabled': match.status === 'finished' || !isPlayerServer(0),
-                'not-server': !isPlayerServer(0)
-              }"
-              @click="recordServeOut(0)"
-            >
-              <van-icon name="close" />
-              <span>发球出界</span>
-            </div>
-            <div 
-              class="action-btn btn-return-out" 
-              :class="{ 'disabled': match.status === 'finished' }"
-              @click="recordReturnOut(0)"
-            >
-              <van-icon name="close" />
-              <span>回球出界</span>
-            </div>
-            <div 
-              class="action-btn btn-golden-point" 
-              :class="{ 
-                'disabled': match.status === 'finished' || !isDeuce(),
-                'not-available': !isDeuce()
-              }"
-              @click="setGoldenPointForCurrentGame(true)"
-            >
-              <van-icon name="medal" />
-              <span>金球</span>
-            </div>
-          </div>
-        </div>
-        
-        <!-- 选手2操作区 -->
-        <div class="player-action-group player2-group">
-          <div class="player-action-title">{{ match.player2_name }}</div>
-          <div class="player-action-buttons">
-            <div 
-              class="action-btn btn-score" 
-              :class="{ 'disabled': match.status === 'finished' }"
-              @click="recordPoint(1)"
-            >
-              <van-icon name="medal-o" />
-              <span>得分</span>
-            </div>
-            <div 
-              class="action-btn btn-ace" 
-              :class="{ 
-                'disabled': match.status === 'finished' || !isPlayerServer(1),
-                'not-server': !isPlayerServer(1)
-              }"
-              @click="recordAceForPlayer(1)"
-            >
-              <van-icon name="star-o" />
-              <span>ACE</span>
-            </div>
-            <div 
-              class="action-btn btn-double-fault" 
-              :class="{ 
-                'disabled': match.status === 'finished' || !isPlayerServer(1),
-                'not-server': !isPlayerServer(1)
-              }"
-              @click="recordDoubleFaultForPlayer(1)"
-            >
-              <van-icon name="cross" />
-              <span>双误</span>
-            </div>
-            <div 
-              class="action-btn btn-first-fault" 
-              :class="{ 
-                'disabled': match.status === 'finished' || !isPlayerServer(1),
-                'not-server': !isPlayerServer(1)
-              }"
-              @click="recordFirstServeFault(1)"
-            >
-              <van-icon name="close" />
-              <span>一发失误</span>
-            </div>
-            <div 
-              class="action-btn btn-serve-out" 
-              :class="{ 
-                'disabled': match.status === 'finished' || !isPlayerServer(1),
-                'not-server': !isPlayerServer(1)
-              }"
-              @click="recordServeOut(1)"
-            >
-              <van-icon name="close" />
-              <span>发球出界</span>
-            </div>
-            <div 
-              class="action-btn btn-return-out" 
-              :class="{ 'disabled': match.status === 'finished' }"
-              @click="recordReturnOut(1)"
-            >
-              <van-icon name="close" />
-              <span>回球出界</span>
-            </div>
-            <div 
-              class="action-btn btn-golden-point" 
-              :class="{ 
-                'disabled': match.status === 'finished' || !isDeuce(),
-                'not-available': !isDeuce()
-              }"
-              @click="setGoldenPointForCurrentGame(true)"
-            >
-              <van-icon name="medal" />
-              <span>金球</span>
-            </div>
-          </div>
-        </div>
-        
-        <!-- 通用操作 -->
-        <div class="common-actions">
-          <div 
-            class="action-btn btn-undo" 
-            :class="{ 'disabled': match.status === 'finished' }"
+        <div class="save-undo-buttons">
+          <van-button 
+            type="default" 
+            size="normal" 
+            round
+            class="undo-button-fixed"
             @click="undoLast"
+            :disabled="match.status === 'finished'"
           >
             <van-icon name="revoke" />
-            <span>撤销</span>
+            撤销
+          </van-button>
+          <van-button 
+            type="success" 
+            size="normal" 
+            round
+            class="save-button-fixed-item"
+            @click="saveScore"
+            :loading="saving"
+            :disabled="match.status === 'finished'"
+          >
+            保存比分
+          </van-button>
+        </div>
+      </div>
+      
+      <!-- 选手操作按钮组（左右布局，与选手位置对应） -->
+      <div class="player-actions">
+        <div class="player-actions-container">
+          <!-- 左侧：选手1操作区 -->
+          <div class="player-action-column player-left-column">
+            <div class="player-action-title">{{ match.player1_name }}</div>
+            <div class="player-action-buttons">
+              <div 
+                class="action-btn btn-score" 
+                :class="{ 'disabled': match.status === 'finished' }"
+                @click="recordPoint(0)"
+              >
+                <van-icon name="medal-o" />
+                <span>得分</span>
+              </div>
+              <div 
+                class="action-btn btn-ace" 
+                :class="{ 
+                  'disabled': match.status === 'finished' || !isPlayerServer(0),
+                  'not-server': !isPlayerServer(0)
+                }"
+                @click="recordAceForPlayer(0)"
+              >
+                <van-icon name="star-o" />
+                <span>ACE</span>
+              </div>
+              <div 
+                class="action-btn btn-serve-out" 
+                :class="{ 
+                  'disabled': match.status === 'finished' || !isPlayerServer(0),
+                  'not-server': !isPlayerServer(0)
+                }"
+                @click="recordServeOut(0)"
+              >
+                <van-icon name="close" />
+                <span>发球出界</span>
+              </div>
+              <div 
+                class="action-btn btn-return-out" 
+                :class="{ 'disabled': match.status === 'finished' }"
+                @click="recordReturnOut(0)"
+              >
+                <van-icon name="close" />
+                <span>回球出界</span>
+              </div>
+              <div 
+                v-if="getScoringMethod() !== 'ad'"
+                class="action-btn btn-golden-point" 
+                :class="{ 
+                  'disabled': match.status === 'finished' || !isDeuce(),
+                  'not-available': !isDeuce()
+                }"
+                @click="setGoldenPointForCurrentGame(true)"
+              >
+                <van-icon name="medal" />
+                <span>金球</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 右侧：选手2操作区 -->
+          <div class="player-action-column player-right-column">
+            <div class="player-action-title">{{ match.player2_name }}</div>
+            <div class="player-action-buttons">
+              <div 
+                class="action-btn btn-score" 
+                :class="{ 'disabled': match.status === 'finished' }"
+                @click="recordPoint(1)"
+              >
+                <van-icon name="medal-o" />
+                <span>得分</span>
+              </div>
+              <div 
+                class="action-btn btn-ace" 
+                :class="{ 
+                  'disabled': match.status === 'finished' || !isPlayerServer(1),
+                  'not-server': !isPlayerServer(1)
+                }"
+                @click="recordAceForPlayer(1)"
+              >
+                <van-icon name="star-o" />
+                <span>ACE</span>
+              </div>
+              <div 
+                class="action-btn btn-serve-out" 
+                :class="{ 
+                  'disabled': match.status === 'finished' || !isPlayerServer(1),
+                  'not-server': !isPlayerServer(1)
+                }"
+                @click="recordServeOut(1)"
+              >
+                <van-icon name="close" />
+                <span>发球出界</span>
+              </div>
+              <div 
+                class="action-btn btn-return-out" 
+                :class="{ 'disabled': match.status === 'finished' }"
+                @click="recordReturnOut(1)"
+              >
+                <van-icon name="close" />
+                <span>回球出界</span>
+              </div>
+              <div 
+                v-if="getScoringMethod() !== 'ad'"
+                class="action-btn btn-golden-point" 
+                :class="{ 
+                  'disabled': match.status === 'finished' || !isDeuce(),
+                  'not-available': !isDeuce()
+                }"
+                @click="setGoldenPointForCurrentGame(true)"
+              >
+                <van-icon name="medal" />
+                <span>金球</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -730,12 +832,14 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { showSuccessToast, showFailToast } from 'vant'
 import { recordPoint as recordPointUtil, getScoreText, recordFirstServeFault as recordFirstServeFaultUtil, recordDoubleFault as recordDoubleFaultUtil, setGoldenPoint as setGoldenPointUtil } from '../utils/scoring'
 import { storage } from '../utils/storage'
+import { getPlayerAvatar } from '../utils/avatar'
 
 const route = useRoute()
+const router = useRouter()
 const match = ref(null)
 const saving = ref(false)
 const lastAction = ref(null)
@@ -761,6 +865,7 @@ const timePickerValue = ref(['14', '00'])
 const editingMatch = ref(null)
 const scoreboardRef = ref(null)
 const showFullscreenScoreboard = ref(false)
+const isProcessingPoint = ref(false) // 防止快速点击导致并发问题
 
 const currentSet = computed(() => {
   return match.value?.currentSet
@@ -847,10 +952,27 @@ function getCurrentGameScore(playerIndex) {
 }
 
 // 格式化单个选手的分数显示（数字计分板风格）
-function formatPointDisplay(points) {
+function formatPointDisplay(points, opponentPoints = 0) {
   if (points === 0) return '0'
-  const pointMap = { 0: '0', 1: '15', 2: '30', 3: '40', 4: 'Ad' }
-  return pointMap[Math.min(points, 3)] || points
+  
+  const scoringMethod = getScoringMethod()
+  const pointMap = { 0: '0', 1: '15', 2: '30', 3: '40' }
+  
+  // 占先制：40分后如果领先对手，显示Ad
+  if (scoringMethod === 'ad') {
+    if (points >= 4 && points > opponentPoints) {
+      return 'Ad'
+    } else if (points >= 3 && opponentPoints >= 3 && points === opponentPoints) {
+      return '40' // Deuce时双方都显示40
+    } else if (points <= 3) {
+      return pointMap[points] || points
+    } else {
+      return '40' // 如果失分回到40
+    }
+  } else {
+    // 金球制：最多显示到40
+    return pointMap[Math.min(points, 3)] || points
+  }
 }
 
 // 格式化当前分（球分）显示，使用15-30这样的格式
@@ -905,8 +1027,19 @@ function getDisplaySets() {
   const sets = match.value.sets || []
   const displaySets = []
   
-  // 添加已完成的盘
-  sets.forEach(set => {
+  // 根据比赛设置（tournament.format）确定最大显示盘数
+  const tournament = tournamentInfo.value
+  const matchFormat = tournament?.format || match.value.format || 'short-set'
+  let maxSets = 1
+  
+  if (matchFormat === 'best-of-3') {
+    maxSets = 3
+  } else if (matchFormat === 'best-of-5') {
+    maxSets = 5
+  }
+  
+  // 只添加已完成的盘（限制在最大盘数内）
+  sets.slice(0, maxSets).forEach(set => {
     displaySets.push(set)
   })
   
@@ -960,6 +1093,26 @@ function getPlayerInitial(name) {
   if (!name) return '?'
   // 获取名字的首个字符（支持中文和英文）
   return name.charAt(0).toUpperCase()
+}
+
+function getFormatText(format) {
+  const formatMap = {
+    'short-set': '短盘制',
+    'best-of-3': '三盘两胜',
+    'best-of-5': '五盘三胜'
+  }
+  return formatMap[format] || format || '短盘制'
+}
+
+function getRoundText(round) {
+  const roundMap = {
+    'group': '小组赛',
+    'round-of-16': '8分之一决赛',
+    'quarter-final': '四分之一决赛',
+    'semi-final': '半决赛',
+    'final': '决赛'
+  }
+  return roundMap[round] || round || '小组赛'
 }
 
 function getPlayer1SetsWon() {
@@ -1168,6 +1321,31 @@ function getPlayerRanking(playerId) {
   return ''
 }
 
+function getPlayerGender(playerId) {
+  if (!playerId || !tournamentInfo.value) return undefined
+  const player = tournamentInfo.value.players?.find(p => {
+    const pId = p.id
+    const mId = playerId
+    return pId === mId || String(pId) === String(mId) || Number(pId) === Number(mId)
+  })
+  return player?.gender
+}
+
+function getPlayerNumber(playerId) {
+  if (!playerId || !tournamentInfo.value) return null
+  const player = tournamentInfo.value.players?.find(p => {
+    const pId = p.id
+    const mId = playerId
+    return pId === mId || String(pId) === String(mId) || Number(pId) === Number(mId)
+  })
+  return player?.number || null
+}
+
+function handleAvatarError(event) {
+  // 如果头像加载失败，使用默认头像
+  event.target.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${event.target.alt}`
+}
+
 function handleEditMatch() {
   initEditFormDate()
   showEditMatchDialog.value = true
@@ -1204,6 +1382,12 @@ function confirmServer() {
     // 保存发球方设置和比赛状态
     saveMatch()
   }
+}
+
+function handleCancelServer() {
+  // 点击取消，返回列表（不保存发球方设置）
+  showServerDialog.value = false
+  router.back()
 }
 
 function updateServer() {
@@ -1250,14 +1434,23 @@ const currentPointServeInfo = ref({
 async function recordPoint(playerIndex, skipSound = false, isAce = false) {
   if (!match.value) return
   
+  // 如果正在处理中，忽略本次点击（防止快速点击导致并发问题）
+  if (isProcessingPoint.value) {
+    return
+  }
+  
   // 如果比赛已结束，不允许操作
   if (match.value.status === 'finished') {
     showFailToast('比赛已结束，无法修改比分')
     return
   }
   
-  // 保存当前状态用于撤销
-  lastAction.value = JSON.parse(JSON.stringify(match.value))
+  // 设置处理标志
+  isProcessingPoint.value = true
+  
+  try {
+    // 保存当前状态用于撤销
+    lastAction.value = JSON.parse(JSON.stringify(match.value))
   
   // 记录当前分的发球信息
   const currentServer = getCurrentServer()
@@ -1303,26 +1496,38 @@ async function recordPoint(playerIndex, skipSound = false, isAce = false) {
   if (match.value.currentSet && match.value.currentSet.currentServer !== playerIndex) {
     // 如果得分的是接球方，下一分还是由发球方发球，重置为一发
     match.value.currentSet.serveState = 'first'
+    // 重置连续发球出界计数（因为换人了）
+    consecutiveServeOuts.value.player1 = 0
+    consecutiveServeOuts.value.player2 = 0
   }
+  
+  // 更新统计数据
+  updatePointStatistics(playerIndex, currentServer, isAce)
   
   // 更新发球方（根据网球规则）
   updateServer()
   
-  // 更新状态
-  if (match.value.status !== 'finished' && match.value.status === 'pending') {
-    match.value.status = 'in-progress'
-    match.value.started_at = new Date().toISOString()
-  }
-  
-  // 如果比赛结束，自动保存并更新排名
-  if (match.value.status === 'finished') {
-    await saveMatch()
-    if (!skipSound) {
-      playSound('match')
+    // 更新状态
+    if (match.value.status !== 'finished' && match.value.status === 'pending') {
+      match.value.status = 'in-progress'
+      match.value.started_at = new Date().toISOString()
     }
-  } else if (!skipSound) {
-    // 普通得分播放声音（ACE、双误、OUT已经播放过了）
-    playSound('point')
+    
+    // 每次操作后立即保存并同步
+    await saveMatch()
+    
+    // 如果比赛结束，播放比赛结束声音
+    if (match.value.status === 'finished') {
+      if (!skipSound) {
+        playSound('match')
+      }
+    } else if (!skipSound) {
+      // 普通得分播放声音（ACE、双误、OUT已经播放过了）
+      playSound('point')
+    }
+  } finally {
+    // 清除处理标志
+    isProcessingPoint.value = false
   }
 }
 
@@ -1330,7 +1535,8 @@ async function getTournament() {
   // 从match中获取tournament_id，然后加载tournament
   if (!match.value?.tournament_id) return null
   
-  const tournaments = await storage.getTournaments()
+  const tournamentsResult = await storage.getTournaments()
+  const tournaments = tournamentsResult.data || (Array.isArray(tournamentsResult) ? tournamentsResult : [])
   return tournaments.find(t => t.id === match.value.tournament_id)
 }
 
@@ -1340,33 +1546,116 @@ function initStats() {
     match.value.stats = {
       player1: {
         aces: 0,
-        doubleFaults: 0
+        doubleFaults: 0,
+        totalPoints: 0,
+        servePointsWon: 0,
+        breakPointsFaced: 0,
+        breakPointsSaved: 0,
+        breakPointsConverted: 0,
+        breakPointsOpportunities: 0,
+        longestStreak: 0,
+        recent10Points: []
       },
       player2: {
         aces: 0,
-        doubleFaults: 0
+        doubleFaults: 0,
+        totalPoints: 0,
+        servePointsWon: 0,
+        breakPointsFaced: 0,
+        breakPointsSaved: 0,
+        breakPointsConverted: 0,
+        breakPointsOpportunities: 0,
+        longestStreak: 0,
+        recent10Points: []
       }
     }
   } else {
     // 确保每个选手都有完整的统计字段
+    const defaultStats = {
+      aces: 0,
+      doubleFaults: 0,
+      totalPoints: 0,
+      servePointsWon: 0,
+      breakPointsFaced: 0,
+      breakPointsSaved: 0,
+      breakPointsConverted: 0,
+      breakPointsOpportunities: 0,
+      longestStreak: 0,
+      recent10Points: []
+    }
+    
     if (!match.value.stats.player1) {
-      match.value.stats.player1 = { aces: 0, doubleFaults: 0 }
+      match.value.stats.player1 = { ...defaultStats }
+    } else {
+      Object.keys(defaultStats).forEach(key => {
+        if (match.value.stats.player1[key] === undefined) {
+          match.value.stats.player1[key] = defaultStats[key]
+        }
+      })
     }
+    
     if (!match.value.stats.player2) {
-      match.value.stats.player2 = { aces: 0, doubleFaults: 0 }
+      match.value.stats.player2 = { ...defaultStats }
+    } else {
+      Object.keys(defaultStats).forEach(key => {
+        if (match.value.stats.player2[key] === undefined) {
+          match.value.stats.player2[key] = defaultStats[key]
+        }
+      })
     }
-    if (match.value.stats.player1.aces === undefined) {
-      match.value.stats.player1.aces = 0
-    }
-    if (match.value.stats.player1.doubleFaults === undefined) {
-      match.value.stats.player1.doubleFaults = 0
-    }
-    if (match.value.stats.player2.aces === undefined) {
-      match.value.stats.player2.aces = 0
-    }
-    if (match.value.stats.player2.doubleFaults === undefined) {
-      match.value.stats.player2.doubleFaults = 0
-    }
+  }
+}
+
+// 跟踪连续发球出界（用于双误统计）
+const consecutiveServeOuts = ref({
+  player1: 0,
+  player2: 0,
+  lastServer: null
+})
+
+// 跟踪当前连胜（用于最高连胜统计）
+const currentStreak = ref({
+  player1: 0,
+  player2: 0
+})
+
+// 更新得分统计
+function updatePointStatistics(playerIndex, serverIndex, isAce) {
+  initStats()
+  const playerKey = playerIndex === 0 ? 'player1' : 'player2'
+  const opponentKey = playerIndex === 0 ? 'player2' : 'player1'
+  
+  // 总得分
+  match.value.stats[playerKey].totalPoints++
+  
+  // 如果是发球方得分，更新发球得分
+  if (playerIndex === serverIndex) {
+    match.value.stats[playerKey].servePointsWon++
+  }
+  
+  // 更新连胜
+  currentStreak.value[playerKey]++
+  currentStreak.value[opponentKey] = 0
+  if (currentStreak.value[playerKey] > match.value.stats[playerKey].longestStreak) {
+    match.value.stats[playerKey].longestStreak = currentStreak.value[playerKey]
+  }
+  
+  // 更新最近10局得分
+  if (!match.value.stats[playerKey].recent10Points) {
+    match.value.stats[playerKey].recent10Points = []
+  }
+  match.value.stats[playerKey].recent10Points.push(1)
+  if (match.value.stats[playerKey].recent10Points.length > 10) {
+    match.value.stats[playerKey].recent10Points.shift()
+  }
+  
+  // 对手最近10局得分（添加0表示失分）
+  if (!match.value.stats[opponentKey].recent10Points) {
+    match.value.stats[opponentKey].recent10Points = []
+  }
+  match.value.stats[opponentKey].recent10Points.push(0)
+  if (match.value.stats[opponentKey].recent10Points.length > 10) {
+    match.value.stats[opponentKey].recent10Points.shift()
   }
 }
 
@@ -1437,9 +1726,12 @@ async function recordDoubleFaultForPlayer(playerIndex) {
   const tournament = await getTournament()
   const scoringMethod = tournament?.scoring_method || 'no-ad'
   
-  // 使用recordDoubleFault工具函数
+  // 使用比赛设置中的format
+  const matchFormat = tournament?.format || match.value.format || 'short-set'
+  
+  // 使用recordDoubleFault工具函数（传入format参数）
   const beforeGamesLength = match.value.currentSet?.games?.length || 0
-  match.value = recordDoubleFaultUtil(match.value, playerIndex, scoringMethod)
+  match.value = recordDoubleFaultUtil(match.value, playerIndex, scoringMethod, matchFormat)
   
   // 如果这一局刚结束，更新最后一局的发球信息
   const afterGamesLength = match.value.currentSet?.games?.length || 0
@@ -1454,14 +1746,16 @@ async function recordDoubleFaultForPlayer(playerIndex) {
   
   playSound('fault')
   
-  // 如果比赛结束，自动保存
+  // 每次操作后立即保存并同步
+  await saveMatch()
+  
+  // 如果比赛结束，播放比赛结束声音
   if (match.value.status === 'finished') {
-    await saveMatch()
     playSound('match')
   }
 }
 
-function recordFirstServeFault(playerIndex) {
+async function recordFirstServeFault(playerIndex) {
   if (!match.value || match.value.status === 'finished') {
     showFailToast('比赛已结束，无法修改比分')
     return
@@ -1479,9 +1773,12 @@ function recordFirstServeFault(playerIndex) {
   
   // 使用recordFirstServeFault工具函数
   match.value = recordFirstServeFaultUtil(match.value, playerIndex)
+  
+  // 每次操作后立即保存并同步
+  await saveMatch()
 }
 
-function setGoldenPointForCurrentGame(isGoldenPoint) {
+async function setGoldenPointForCurrentGame(isGoldenPoint) {
   if (!match.value || match.value.status === 'finished') {
     showFailToast('比赛已结束，无法修改比分')
     return
@@ -1498,6 +1795,9 @@ function setGoldenPointForCurrentGame(isGoldenPoint) {
   
   // 设置金球状态
   match.value = setGoldenPointUtil(match.value, isGoldenPoint)
+  
+  // 每次操作后立即保存并同步
+  await saveMatch()
   
   if (isGoldenPoint) {
     showSuccessToast('已设置为金球')
@@ -1525,17 +1825,45 @@ async function recordServeOut(playerIndex) {
     return
   }
   
+  // 保存当前状态用于撤销
+  lastAction.value = JSON.parse(JSON.stringify(match.value))
+  
+  // 跟踪连续发球出界（用于双误统计）
+  const playerKey = playerIndex === 0 ? 'player1' : 'player2'
+  
+  // 如果换人了，重置连续出界计数
+  if (consecutiveServeOuts.value.lastServer !== playerIndex) {
+    consecutiveServeOuts.value.player1 = 0
+    consecutiveServeOuts.value.player2 = 0
+    consecutiveServeOuts.value.lastServer = playerIndex
+  }
+  
+  // 增加连续出界计数
+  consecutiveServeOuts.value[playerKey]++
+  
   // 如果是一发，记录为一发失误（切换到二发）
   if (currentSet.value && currentSet.value.serveState === 'first') {
-    // 保存当前状态用于撤销
-    lastAction.value = JSON.parse(JSON.stringify(match.value))
+    playSound('out') // 播放出界声音
     match.value = recordFirstServeFaultUtil(match.value, playerIndex)
+    // 每次操作后立即保存并同步
+    await saveMatch()
     return
   }
   
-  // 如果是二发出界，则是双误
+  // 如果是二发出界，检查是否是双误（连续两次发球出界）
   if (currentSet.value && currentSet.value.serveState === 'second') {
-    recordDoubleFaultForPlayer(playerIndex)
+    playSound('out') // 播放出界声音
+    
+    // 如果连续两次发球出界，才算双误
+    if (consecutiveServeOuts.value[playerKey] >= 2) {
+      // 重置连续出界计数
+      consecutiveServeOuts.value[playerKey] = 0
+      await recordDoubleFaultForPlayer(playerIndex)
+    } else {
+      // 单次发球出界，接球方得分
+      const receiver = playerIndex === 0 ? 1 : 0
+      await recordPoint(receiver, true) // skipSound = true
+    }
     return
   }
   
@@ -1545,7 +1873,7 @@ async function recordServeOut(playerIndex) {
   await recordPoint(receiver, true) // skipSound = true
 }
 
-function recordReturnOut(playerIndex) {
+async function recordReturnOut(playerIndex) {
   if (!match.value || match.value.status === 'finished') {
     showFailToast('比赛已结束，无法修改比分')
     return
@@ -1554,21 +1882,21 @@ function recordReturnOut(playerIndex) {
   // 回球出界：回球方出界，对手得分
   const opponent = playerIndex === 0 ? 1 : 0
   playSound('out')
-  recordPoint(opponent, true) // skipSound = true
+  await recordPoint(opponent, true) // skipSound = true，recordPoint内部会保存
 }
 
 // 保留旧函数以兼容
-function recordAce() {
+async function recordAce() {
   const server = getCurrentServer()
-  recordAceForPlayer(server)
+  await recordAceForPlayer(server) // recordAceForPlayer内部会保存
 }
 
-function recordDoubleFault() {
+async function recordDoubleFault() {
   const server = getCurrentServer()
-  recordDoubleFaultForPlayer(server)
+  await recordDoubleFaultForPlayer(server) // recordDoubleFaultForPlayer内部会保存
 }
 
-function confirmOut() {
+async function confirmOut() {
   if (!match.value || match.value.status === 'finished') {
     showFailToast('比赛已结束，无法修改比分')
     showOutDialog.value = false
@@ -1577,11 +1905,11 @@ function confirmOut() {
   
   // OUT：OUT方失分，对手得分
   const outPlayer = parseInt(selectedOutPlayer.value)
-  recordReturnOut(outPlayer)
+  await recordReturnOut(outPlayer) // recordReturnOut内部会保存
   showOutDialog.value = false
 }
 
-function undoLast() {
+async function undoLast() {
   if (!lastAction.value) {
     showFailToast('没有可撤销的操作')
     return
@@ -1594,6 +1922,10 @@ function undoLast() {
   
   match.value = lastAction.value
   lastAction.value = null
+  
+  // 撤销后立即保存并同步
+  await saveMatch()
+  
   showSuccessToast('已撤销')
 }
 
@@ -1664,8 +1996,15 @@ async function loadMatch() {
       return
     }
     
-    // 重置match值，避免显示旧数据
+    // 重置match值和所有相关状态，避免显示旧数据
     match.value = null
+    tournamentInfo.value = null
+    lastAction.value = null
+    selectedServer.value = '0'
+    showServerDialog.value = false
+    activeTab.value = 'match'
+    selectedSetIndex.value = 0
+    selectedStatisticsSet.value = -1
     
     // 支持字符串和数字类型的ID
     const matchIdNum = typeof matchId === 'string' ? parseInt(matchId) : matchId
@@ -1673,53 +2012,71 @@ async function loadMatch() {
     console.log('🔍 转换后的ID:', matchIdNum, 'Tournament ID:', tournamentIdNum)
     
     // 从所有tournament中查找match
-    const tournaments = await storage.getTournaments()
+    const tournamentsResult = await storage.getTournaments()
+    const tournaments = tournamentsResult.data || (Array.isArray(tournamentsResult) ? tournamentsResult : [])
     
     let foundMatch = null
     let foundTournament = null
     
-    // 如果指定了tournament_id，优先从该tournament中查找
+    // 如果指定了tournament_id，必须严格从该tournament中查找
     if (tournamentIdNum) {
       const tournament = tournaments.find(t => {
         const tId = t.id
         return tId === tournamentIdNum || tId === tournamentId || String(tId) === String(tournamentId)
       })
-      if (tournament && tournament.matches && Array.isArray(tournament.matches)) {
+      
+      if (!tournament) {
+        console.error('❌ 未找到指定的tournament，ID:', tournamentIdNum)
+        showFailToast('未找到指定的比赛')
+        return
+      }
+      
+      if (tournament.matches && Array.isArray(tournament.matches)) {
         foundMatch = tournament.matches.find(m => {
           const mId = m.id
-          return mId === matchId || mId === matchIdNum || String(mId) === String(matchId)
+          const matchFound = mId === matchId || mId === matchIdNum || String(mId) === String(matchId)
+          
+          // 额外验证：确保match的tournament_id也匹配
+          if (matchFound) {
+            const matchTournamentId = m.tournament_id
+            const isTournamentMatch = matchTournamentId === tournamentIdNum || 
+                                     matchTournamentId === tournamentId || 
+                                     String(matchTournamentId) === String(tournamentId) ||
+                                     matchTournamentId === tournament.id
+            return isTournamentMatch
+          }
+          return false
         })
+        
         if (foundMatch) {
           foundTournament = tournament
           console.log('✅ 从指定tournament中找到比赛:', {
             id: foundMatch.id,
             player1: foundMatch.player1_name,
             player2: foundMatch.player2_name,
-            tournament: tournament.name
+            tournament: tournament.name,
+            tournamentId: tournament.id,
+            matchTournamentId: foundMatch.tournament_id
           })
+        } else {
+          console.error('❌ 在指定tournament中未找到match，Match ID:', matchId, 'Tournament ID:', tournamentIdNum)
+          showFailToast('未找到指定的比赛')
+          return
         }
+      } else {
+        console.error('❌ Tournament没有matches数组')
+        showFailToast('比赛数据异常')
+        return
       }
-    }
-    
-    // 如果没找到，遍历所有tournament查找
-    if (!foundMatch) {
-      console.log('🔍 未在指定tournament中找到，遍历所有tournament查找...')
+    } else {
+      // 如果没有指定tournament_id，遍历所有tournament查找（兼容旧数据）
+      console.log('⚠️ 未指定tournament_id，遍历所有tournament查找...')
       for (const tournament of tournaments) {
         if (tournament.matches && Array.isArray(tournament.matches)) {
           // 支持字符串和数字类型的ID匹配
           foundMatch = tournament.matches.find(m => {
             const mId = m.id
-            const match = mId === matchId || mId === matchIdNum || String(mId) === String(matchId)
-            if (match) {
-              console.log('✅ 找到比赛:', {
-                id: m.id,
-                player1: m.player1_name,
-                player2: m.player2_name,
-                tournament: tournament.name,
-                tournamentId: tournament.id
-              })
-            }
-            return match
+            return mId === matchId || mId === matchIdNum || String(mId) === String(matchId)
           })
           if (foundMatch) {
             foundTournament = tournament
@@ -1746,18 +2103,104 @@ async function loadMatch() {
     if (!foundMatch || !foundTournament) {
       console.error('❌ 未找到比赛，ID:', matchId)
       showFailToast('未找到比赛')
+      router.back() // 返回上一页
       return
     }
     
     // 深拷贝比赛数据，确保不会引用旧数据
-    match.value = JSON.parse(JSON.stringify(foundMatch))
-    match.value.tournament_id = foundTournament.id
-    match.value.format = foundTournament.format // 保存比赛格式
+    const matchData = JSON.parse(JSON.stringify(foundMatch))
+    
+    // 强制设置tournament_id，确保数据一致性
+    matchData.tournament_id = foundTournament.id
+    matchData.format = foundTournament.format // 保存比赛格式
+    
+    // 验证match的player1_id和player2_id是否在tournament的players中存在
+    if (foundTournament.players && Array.isArray(foundTournament.players)) {
+      // 验证player1_id
+      if (matchData.player1_id !== undefined && matchData.player1_id !== null) {
+        const player1Exists = foundTournament.players.some(p => {
+          const pId = p.id
+          const mId = matchData.player1_id
+          return pId === mId || String(pId) === String(mId) || Number(pId) === Number(mId)
+        })
+        if (!player1Exists) {
+          console.error('❌ player1_id不在tournament的players中:', matchData.player1_id)
+        }
+      }
+      
+      // 验证player2_id
+      if (matchData.player2_id !== undefined && matchData.player2_id !== null) {
+        const player2Exists = foundTournament.players.some(p => {
+          const pId = p.id
+          const mId = matchData.player2_id
+          return pId === mId || String(pId) === String(mId) || Number(pId) === Number(mId)
+        })
+        if (!player2Exists) {
+          console.error('❌ player2_id不在tournament的players中:', matchData.player2_id)
+        }
+      }
+    }
+    
+    // 设置match值（使用nextTick确保响应式更新）
+    await nextTick()
+    match.value = matchData
+    
+    console.log('✅ 比赛数据已设置:', {
+      matchId: match.value.id,
+      tournamentId: match.value.tournament_id,
+      player1_id: match.value.player1_id,
+      player2_id: match.value.player2_id,
+      player1_name: match.value.player1_name,
+      player2_name: match.value.player2_name
+    })
+    
+    // 验证数据一致性
+    const matchTournamentId = match.value.tournament_id
+    const expectedTournamentId = foundTournament.id
+    if (matchTournamentId !== expectedTournamentId && 
+        String(matchTournamentId) !== String(expectedTournamentId)) {
+      console.error('❌ 数据不一致警告:', {
+        matchTournamentId: match.value.tournament_id,
+        foundTournamentId: foundTournament.id
+      })
+      // 强制修正
+      match.value.tournament_id = foundTournament.id
+    }
+    
+    // 确保选手名字正确：优先从tournament的players中查找，确保数据一致性
+    if (foundTournament.players && Array.isArray(foundTournament.players)) {
+      if (match.value.player1_id !== undefined && match.value.player1_id !== null) {
+        const player1 = foundTournament.players.find(p => {
+          const pId = p.id
+          const mId = match.value.player1_id
+          // 支持多种ID类型匹配
+          return pId === mId || String(pId) === String(mId) || Number(pId) === Number(mId)
+        })
+        if (player1 && player1.name) {
+          match.value.player1_name = player1.name
+          match.value.player1_id = player1.id // 确保ID类型一致
+        }
+      }
+      if (match.value.player2_id !== undefined && match.value.player2_id !== null) {
+        const player2 = foundTournament.players.find(p => {
+          const pId = p.id
+          const mId = match.value.player2_id
+          // 支持多种ID类型匹配
+          return pId === mId || String(pId) === String(mId) || Number(pId) === Number(mId)
+        })
+        if (player2 && player2.name) {
+          match.value.player2_name = player2.name
+          match.value.player2_id = player2.id // 确保ID类型一致
+        }
+      }
+    }
     
     console.log('📋 加载的比赛数据:', {
       id: match.value.id,
       player1: match.value.player1_name,
       player2: match.value.player2_name,
+      player1_id: match.value.player1_id,
+      player2_id: match.value.player2_id,
       status: match.value.status
     })
     
@@ -1766,13 +2209,16 @@ async function loadMatch() {
     
     // 如果比赛未开始，必须先设置发球方才能开始
     if (match.value.status === 'pending') {
-      // 重置发球方选择为默认值（player1）
-      selectedServer.value = '0'
-      // 显示发球方选择对话框（必须设置才能开始）
-      // 使用 nextTick 确保 match.value 已经正确设置到响应式系统中
-      await nextTick()
-      showServerDialog.value = true
-      return
+      // 检查是否已经设置了发球方
+      if (!match.value.currentSet || match.value.currentSet.currentServer === undefined) {
+        // 未设置发球方，显示弹窗让用户设置
+        // 重置发球方选择为默认值（player1）
+        selectedServer.value = '0'
+        // 使用 nextTick 确保 match.value 已经正确设置到响应式系统中
+        await nextTick()
+        showServerDialog.value = true
+        return
+      }
     }
     
     // 初始化currentSet如果不存在
@@ -1955,25 +2401,26 @@ function getServeStatistics(player, setIndex = -1) {
       set.games.forEach(game => {
         if (game.server === playerIndex) {
           // 这是一个发球局
-          firstServeTotal++
+          firstServeTotal++ // 所有发球局都算作一发总数
           
           // 检查一发是否成功
           // 如果firstServeIn为false，说明一发失误，进入二发
           // 如果firstServeIn为true或undefined，说明一发成功
           const firstServeInThisGame = game.firstServeIn !== false
+          const isWinner = game.winner === (playerIndex === 0 ? 'player1' : 'player2')
           
           if (firstServeInThisGame) {
             // 一发成功
             firstServeIn++
             // 如果这一局该选手赢了，说明一发得分
-            if (game.winner === (playerIndex === 0 ? 'player1' : 'player2')) {
+            if (isWinner) {
               firstServeWon++
             }
           } else {
             // 一发失误，进入二发
             secondServeTotal++
             // 如果这一局该选手赢了，说明二发得分
-            if (game.winner === (playerIndex === 0 ? 'player1' : 'player2')) {
+            if (isWinner) {
               secondServeWon++
             }
           }
@@ -1989,6 +2436,209 @@ function getServeStatistics(player, setIndex = -1) {
     secondServeTotal,
     secondServeWon
   }
+}
+
+// 获取挽救破发点成功率
+function getBreakPointsSaved(player, setIndex = -1) {
+  initStats()
+  const playerKey = player === 'player1' ? 'player1' : 'player2'
+  const faced = match.value.stats?.[playerKey]?.breakPointsFaced || 0
+  const saved = match.value.stats?.[playerKey]?.breakPointsSaved || 0
+  if (faced === 0) return '0/0 (0%)'
+  const percentage = Math.round((saved / faced) * 100)
+  return `${saved}/${faced} (${percentage}%)`
+}
+
+// 获取破发球得分率
+function getBreakPointsConverted(player, setIndex = -1) {
+  initStats()
+  const playerKey = player === 'player1' ? 'player1' : 'player2'
+  const opportunities = match.value.stats?.[playerKey]?.breakPointsOpportunities || 0
+  const converted = match.value.stats?.[playerKey]?.breakPointsConverted || 0
+  if (opportunities === 0) return '0/0 (0%)'
+  const percentage = Math.round((converted / opportunities) * 100)
+  return `${converted}/${opportunities} (${percentage}%)`
+}
+
+// 获取一发接发球成功率
+function getFirstServeReturnWinRate(player, setIndex = -1) {
+  const stats = getReturnStatistics(player, setIndex)
+  const total = stats.firstServeReturnTotal
+  const won = stats.firstServeReturnWon
+  if (total === 0) return '0/0 (0%)'
+  const percentage = Math.round((won / total) * 100)
+  return `${won}/${total} (${percentage}%)`
+}
+
+// 获取二发接发球成功率
+function getSecondServeReturnWinRate(player, setIndex = -1) {
+  const stats = getReturnStatistics(player, setIndex)
+  const total = stats.secondServeReturnTotal
+  const won = stats.secondServeReturnWon
+  if (total === 0) return '0/0 (0%)'
+  const percentage = Math.round((won / total) * 100)
+  return `${won}/${total} (${percentage}%)`
+}
+
+// 获取接发球统计数据
+function getReturnStatistics(player, setIndex = -1) {
+  const playerIndex = player === 'player1' ? 0 : 1
+  const opponentIndex = playerIndex === 0 ? 1 : 0
+  let firstServeReturnTotal = 0 // 一发接发球总数
+  let firstServeReturnWon = 0 // 一发接发球得分
+  let secondServeReturnTotal = 0 // 二发接发球总数
+  let secondServeReturnWon = 0 // 二发接发球得分
+  
+  // 收集要统计的盘
+  const setsToCount = []
+  if (setIndex === -1) {
+    if (match.value.sets) {
+      setsToCount.push(...match.value.sets)
+    }
+    if (currentSet.value) {
+      setsToCount.push(currentSet.value)
+    }
+  } else {
+    const set = getStatisticsSet(setIndex)
+    if (set) {
+      setsToCount.push(set)
+    }
+  }
+  
+  // 遍历所有要统计的盘
+  setsToCount.forEach(set => {
+    if (set && set.games) {
+      set.games.forEach(game => {
+        // 对手发球，当前选手接发球
+        if (game.server === opponentIndex) {
+          const firstServeIn = game.firstServeIn !== false
+          
+          if (firstServeIn) {
+            // 一发接发球
+            firstServeReturnTotal++
+            // 如果接球方赢了这一局
+            if (game.winner === (playerIndex === 0 ? 'player1' : 'player2')) {
+              firstServeReturnWon++
+            }
+          } else {
+            // 二发接发球
+            secondServeReturnTotal++
+            // 如果接球方赢了这一局
+            if (game.winner === (playerIndex === 0 ? 'player1' : 'player2')) {
+              secondServeReturnWon++
+            }
+          }
+        }
+      })
+    }
+  })
+  
+  return {
+    firstServeReturnTotal,
+    firstServeReturnWon,
+    secondServeReturnTotal,
+    secondServeReturnWon
+  }
+}
+
+// 获取总得分
+function getTotalPoints(player, setIndex = -1) {
+  initStats()
+  const playerKey = player === 'player1' ? 'player1' : 'player2'
+  const opponentKey = player === 'player1' ? 'player2' : 'player1'
+  const playerIndex = player === 'player1' ? 0 : 1
+  
+  let playerPoints = 0
+  let totalPoints = 0
+  
+  if (setIndex === -1) {
+    // 统计整个比赛
+    playerPoints = match.value.stats?.[playerKey]?.totalPoints || 0
+    const opponentPoints = match.value.stats?.[opponentKey]?.totalPoints || 0
+    totalPoints = playerPoints + opponentPoints
+  } else {
+    // 统计特定盘（需要从games中计算）
+    const set = getStatisticsSet(setIndex)
+    if (set && set.games) {
+      set.games.forEach(game => {
+        const playerKeyInGame = playerIndex === 0 ? 'player1' : 'player2'
+        const opponentKeyInGame = playerIndex === 0 ? 'player2' : 'player1'
+        playerPoints += game[`${playerKeyInGame}Points`] || 0
+        totalPoints += (game[`${playerKeyInGame}Points`] || 0) + (game[`${opponentKeyInGame}Points`] || 0)
+      })
+    }
+  }
+  
+  if (totalPoints === 0) return '0/0 (0%)'
+  const percentage = Math.round((playerPoints / totalPoints) * 100)
+  return `${playerPoints}/${totalPoints} (${percentage}%)`
+}
+
+// 获取最高连续得分
+function getLongestStreak(player, setIndex = -1) {
+  initStats()
+  const playerKey = player === 'player1' ? 'player1' : 'player2'
+  return match.value.stats?.[playerKey]?.longestStreak || 0
+}
+
+// 获取发球得分
+function getServePointsWon(player, setIndex = -1) {
+  initStats()
+  const playerKey = player === 'player1' ? 'player1' : 'player2'
+  const playerIndex = player === 'player1' ? 0 : 1
+  
+  let servePointsWon = 0
+  let servePointsTotal = 0
+  
+  if (setIndex === -1) {
+    // 统计整个比赛
+    servePointsWon = match.value.stats?.[playerKey]?.servePointsWon || 0
+    // 需要计算总发球得分（从games中统计）
+    const setsToCount = []
+    if (match.value.sets) {
+      setsToCount.push(...match.value.sets)
+    }
+    if (currentSet.value) {
+      setsToCount.push(currentSet.value)
+    }
+    
+    setsToCount.forEach(set => {
+      if (set && set.games) {
+        set.games.forEach(game => {
+          if (game.server === playerIndex) {
+            const playerKeyInGame = playerIndex === 0 ? 'player1' : 'player2'
+            servePointsTotal += game[`${playerKeyInGame}Points`] || 0
+          }
+        })
+      }
+    })
+  } else {
+    // 统计特定盘
+    const set = getStatisticsSet(setIndex)
+    if (set && set.games) {
+      set.games.forEach(game => {
+        if (game.server === playerIndex) {
+          const playerKeyInGame = playerIndex === 0 ? 'player1' : 'player2'
+          const points = game[`${playerKeyInGame}Points`] || 0
+          servePointsWon += points
+          servePointsTotal += points
+        }
+      })
+    }
+  }
+  
+  if (servePointsTotal === 0) return '0/0 (0%)'
+  const percentage = Math.round((servePointsWon / servePointsTotal) * 100)
+  return `${servePointsWon}/${servePointsTotal} (${percentage}%)`
+}
+
+// 获取最近10局得分
+function getRecent10Points(player, setIndex = -1) {
+  initStats()
+  const playerKey = player === 'player1' ? 'player1' : 'player2'
+  const recent10 = match.value.stats?.[playerKey]?.recent10Points || []
+  const won = recent10.filter(p => p === 1).length
+  return won
 }
 
 function getSelectedSet() {
@@ -2062,21 +2712,55 @@ async function saveMatch() {
   if (!match.value) return
   
   try {
+    // 确保match有tournament_id
+    if (!match.value.tournament_id && tournamentInfo.value) {
+      match.value.tournament_id = tournamentInfo.value.id
+      console.log('⚠️ 保存时补充tournament_id:', tournamentInfo.value.id)
+    }
+    
+    if (!match.value.tournament_id) {
+      throw new Error('比赛缺少tournament_id，无法保存')
+    }
+    
     // 获取比赛所属的tournament
-    const tournaments = await storage.getTournaments()
-    const tournament = tournaments.find(t => t.id === match.value.tournament_id)
+    const tournamentsResult = await storage.getTournaments()
+    const tournaments = tournamentsResult.data || (Array.isArray(tournamentsResult) ? tournamentsResult : [])
+    const tournament = tournaments.find(t => {
+      const tId = t.id
+      const mTournamentId = match.value.tournament_id
+      return tId === mTournamentId || String(tId) === String(mTournamentId) || Number(tId) === Number(mTournamentId)
+    })
     
     if (!tournament) {
+      console.error('❌ 找不到比赛所属的赛事:', {
+        matchTournamentId: match.value.tournament_id,
+        availableTournamentIds: tournaments.map(t => t.id)
+      })
       throw new Error('找不到比赛所属的赛事')
     }
     
     // 更新比赛数据
-    const matchIndex = tournament.matches.findIndex(m => m.id === match.value.id)
+    const matchIndex = tournament.matches.findIndex(m => {
+      const mId = m.id
+      const matchId = match.value.id
+      return mId === matchId || String(mId) === String(matchId) || Number(mId) === Number(matchId)
+    })
+    
     if (matchIndex === -1) {
+      console.error('❌ 找不到比赛记录:', {
+        matchId: match.value.id,
+        tournamentId: tournament.id,
+        availableMatchIds: tournament.matches.map(m => m.id)
+      })
       throw new Error('找不到比赛记录')
     }
     
-    tournament.matches[matchIndex] = { ...match.value }
+    // 确保保存的match包含tournament_id
+    const matchToSave = { 
+      ...match.value,
+      tournament_id: tournament.id // 强制使用tournament.id确保一致性
+    }
+    tournament.matches[matchIndex] = matchToSave
     
     // 如果任意一场比赛开始，更新比赛状态为进行中
     if (match.value.status === 'in-progress') {
@@ -2316,7 +3000,8 @@ async function saveMatchEdit() {
     match.value.location = matchEditForm.value.location
     
     // 保存到storage
-    const tournaments = await storage.getTournaments()
+    const tournamentsResult = await storage.getTournaments()
+    const tournaments = tournamentsResult.data || (Array.isArray(tournamentsResult) ? tournamentsResult : [])
     const tournament = tournaments.find(t => t.id === match.value.tournament_id)
     
     if (tournament) {
@@ -2339,20 +3024,25 @@ onMounted(() => {
 })
 
 // 监听路由变化，重新加载比赛数据（解决移动端跳转问题）
-watch(() => route.params.id, (newId, oldId) => {
-  if (newId !== oldId) {
-    console.log('🔄 路由参数变化，重新加载比赛:', oldId, '->', newId)
-    loadMatch()
+watch(() => [route.params.id, route.query.tournament], ([newId, newTournamentId], [oldId, oldTournamentId]) => {
+  // 只有当ID或tournament_id发生变化时才重新加载
+  if (newId !== oldId || newTournamentId !== oldTournamentId) {
+    console.log('🔄 路由参数变化，重新加载比赛:', {
+      oldId,
+      newId,
+      oldTournamentId,
+      newTournamentId
+    })
+    // 先清空当前数据，避免显示旧数据
+    match.value = null
+    tournamentInfo.value = null
+    showServerDialog.value = false
+    // 延迟一下确保路由完全切换
+    setTimeout(() => {
+      loadMatch()
+    }, 150)
   }
-})
-
-// 监听查询参数变化（tournament_id）
-watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
-  if (newTournamentId !== oldTournamentId) {
-    console.log('🔄 查询参数变化，重新加载比赛:', oldTournamentId, '->', newTournamentId)
-    loadMatch()
-  }
-})
+}, { immediate: false })
 </script>
 
 <style scoped>
@@ -2368,25 +3058,6 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   padding-bottom: 80px;
 }
 
-/* 比赛标题区域 */
-.match-title-section {
-  padding: 16px;
-  background: white;
-  text-align: center;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.match-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1e293b;
-  margin-bottom: 4px;
-}
-
-.match-info {
-  font-size: 13px;
-  color: #64748b;
-}
 
 /* 比赛头部 */
 .match-header {
@@ -2435,17 +3106,20 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   align-items: flex-end;
 }
 
+.player-avatar-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .player-avatar {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
+  object-fit: cover;
+  border: 3px solid #e2e8f0;
+  cursor: pointer;
+  transition: all 0.2s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s;
 }
 
 .clickable-avatar {
@@ -2462,14 +3136,36 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   cursor: not-allowed;
 }
 
-.player-right .player-avatar {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+.player-right .player-avatar-wrapper {
+  margin-left: auto;
 }
 
-.avatar-text {
-  font-size: 24px;
-  font-weight: 600;
+.avatar-number {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background: #3b82f6;
   color: white;
+  font-size: 11px;
+  font-weight: 600;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
+  line-height: 1;
+}
+
+.player-number {
+  background: #3b82f6;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
 }
 
 .star-icon {
@@ -2523,6 +3219,26 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   font-size: 12px;
   color: #94a3b8;
   margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.match-info-inline {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.info-inline-item {
+  font-size: 11px;
+  color: #94a3b8;
+  padding: 2px 6px;
+  background: #f1f5f9;
+  border-radius: 4px;
 }
 
 /* 导航栏 */
@@ -3024,7 +3740,7 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   cursor: not-allowed;
 }
 
-/* 吸底保存按钮 */
+/* 吸底保存和撤销按钮 */
 .save-button-fixed {
   position: fixed;
   bottom: 0;
@@ -3036,8 +3752,23 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   z-index: 99;
 }
 
+.save-undo-buttons {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.undo-button-fixed {
+  flex: 0 0 auto;
+  min-width: 80px;
+}
+
+.save-button-fixed-item {
+  flex: 1;
+}
+
 .match-score {
-  padding-bottom: 280px; /* 为吸底按钮和操作按钮组留出空间 */
+  padding-bottom: 400px; /* 为吸底按钮和操作按钮组留出更多空间，确保操作面板完全显示 */
 }
 
 /* 得分榜样式 */
@@ -3071,9 +3802,32 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
 }
 
 .fullscreen-scoreboard-popup.landscape {
+  transform: rotate(90deg);
+  transform-origin: center center;
+  width: 100vh !important;
+  height: 100vw !important;
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  margin-top: calc(-50vw) !important;
+  margin-left: calc(-50vh) !important;
   display: flex;
   flex-direction: column;
   background: #f8fafc;
+  overflow: hidden;
+  z-index: 9999;
+}
+
+.fullscreen-scoreboard-popup.landscape .van-popup__content {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+.fullscreen-scoreboard-popup.landscape .van-overlay {
+  background: transparent !important;
 }
 
 /* 全屏页面容器 */
@@ -3083,6 +3837,13 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   height: 100%;
   width: 100%;
   background: #f8fafc;
+  overflow: hidden;
+}
+
+.fullscreen-page-container.rotated-container {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* 全屏页面头部 */
@@ -3122,6 +3883,10 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   flex-shrink: 0;
 }
 
+.fullscreen-nav-tabs.rotated-nav {
+  padding: 0 30px;
+}
+
 .fullscreen-nav-tab {
   padding: 16px 32px;
   font-size: 16px;
@@ -3146,15 +3911,18 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
 /* 全屏页面内容 */
 .fullscreen-page-content {
   flex: 1;
-  overflow-y: auto;
-  padding: 40px;
+  overflow: hidden;
+  padding: 0;
   background: #f8fafc;
+  position: relative;
 }
 
 .fullscreen-tab-content {
   width: 100%;
-  max-width: 1400px;
-  margin: 0 auto;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  position: relative;
 }
 
 .digital-scoreboard.fullscreen-version {
@@ -3196,7 +3964,7 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   font-size: 32px;
 }
 
-/* 投屏旋转90度 */
+/* 投屏旋转90度 - 手机横屏展示 */
 .fullscreen-tab-content {
   position: relative;
   width: 100%;
@@ -3205,18 +3973,161 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  background: #f8fafc;
+}
+
+.fullscreen-page-content.rotated-content {
+  flex: 1;
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 横屏计分板容器 */
+.rotated-scoreboard-wrapper {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background: white;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .rotated-scoreboard {
-  transform: rotate(90deg);
-  transform-origin: center center;
-  width: 95vh;
-  height: 95vw;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  margin-top: calc(-47.5vw);
-  margin-left: calc(-47.5vh);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: white;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 横屏模式下，将表格结构改为纵向布局 */
+.rotated-scoreboard .scoreboard-header {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0;
+  padding: 0;
+  background: #1e293b;
+  color: white;
+  grid-template-columns: none !important;
+  overflow: hidden;
+}
+
+.rotated-scoreboard .scoreboard-header .header-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 30px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+  font-size: 24px;
+  font-weight: 600;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rotated-scoreboard .scoreboard-header .header-item:last-child {
+  border-bottom: none;
+}
+
+.rotated-scoreboard .scoreboard-row {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0;
+  padding: 0;
+  background: white;
+  border-bottom: 2px solid #e5e7eb;
+  grid-template-columns: none !important;
+  flex: 1;
+}
+
+.rotated-scoreboard .scoreboard-row:last-child {
+  border-bottom: none;
+}
+
+.rotated-scoreboard .scoreboard-row .row-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 30px;
+  font-size: 42px;
+  font-weight: 600;
+  width: 100%;
+  box-sizing: border-box;
+  flex: 1;
+}
+
+.rotated-scoreboard .row-item.row-player {
+  font-size: 32px;
+  color: #1e293b;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.rotated-scoreboard .row-item.row-sets,
+.rotated-scoreboard .row-item.row-games,
+.rotated-scoreboard .row-item.row-points {
+  font-size: 56px;
+  color: #3b82f6;
+  justify-content: flex-end;
+  font-weight: 700;
+}
+
+/* 右侧选手信息栏 */
+.rotated-player-info-bar {
+  width: 120px;
+  min-width: 120px;
+  background: #1e293b;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 40px 20px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.player-info-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.player-info-name {
+  color: white;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 4px;
+}
+
+.close-button-rotated {
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  cursor: pointer;
+  margin-top: 20px;
+}
+
+.close-button-rotated .van-icon {
+  font-size: 32px;
+  color: white;
+}
+
+.close-button-rotated:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 /* 全屏模式下的资料统计样式 */
@@ -3817,40 +4728,46 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   color: #059669;
 }
 
-/* 选手操作按钮组 */
+/* 选手操作按钮组（左右布局） */
 .player-actions {
   position: fixed;
-  bottom: 80px;
+  bottom: 60px;
   left: 0;
   right: 0;
-  padding: 8px 12px;
+  padding: 12px;
   background: white;
   border-top: 1px solid #e2e8f0;
-  max-height: 200px; /* 限制最大高度，避免遮挡 */
+  max-height: calc(100vh - 200px); /* 动态计算最大高度，确保不被遮挡 */
   overflow-y: auto;
   z-index: 100;
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
 }
 
-.player-action-group {
-  margin-bottom: 10px;
+.player-actions-container {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
 }
 
-.player-action-group:last-child {
-  margin-bottom: 0;
+.player-action-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
+
 
 .player-action-title {
   font-size: 12px;
   font-weight: 600;
   color: #1e293b;
-  margin-bottom: 6px;
-  padding-left: 2px;
+  margin-bottom: 8px;
+  text-align: center;
+  padding: 4px 0;
 }
 
 .player-action-buttons {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 6px;
 }
 
@@ -3859,7 +4776,7 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 6px 4px;
+  padding: 8px 4px;
   background: #f8fafc;
   border-radius: 6px;
   border: 1px solid #e2e8f0;
@@ -3867,8 +4784,10 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   transition: all 0.2s;
   font-size: 11px;
   color: #64748b;
-  min-height: 48px; /* 减小高度 */
+  min-height: 52px;
+  width: 100%;
 }
+
 
 .action-btn:active:not(.disabled) {
   transform: scale(0.95);
@@ -3983,9 +4902,4 @@ watch(() => route.query.tournament, (newTournamentId, oldTournamentId) => {
   border-top: 1px solid #e2e8f0;
 }
 
-.common-actions .action-btn {
-  width: 100%;
-  grid-column: 1 / -1;
-  min-height: 44px; /* 撤销按钮稍大一点 */
-}
 </style>

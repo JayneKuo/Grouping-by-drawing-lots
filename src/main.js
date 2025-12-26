@@ -18,6 +18,11 @@ app.use(pinia)
 app.use(router)
 app.use(Vant)
 
+// 初始化用户登录状态（从localStorage恢复）
+import { useUserStore } from './store/user'
+const userStore = useUserStore()
+userStore.restoreLoginState()
+
 // 设置实时数据监听（如果使用Firebase）
 // 始终启用Firebase监听，确保多用户数据同步
 if (storage.useFirebase) {

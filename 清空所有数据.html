@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>清空所有数据</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .warning {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #ffc107;
+        }
+        .success {
+            background: #d4edda;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #28a745;
+        }
+        .error {
+            background: #f8d7da;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #dc3545;
+        }
+        button {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #d32f2f;
+        }
+        button.secondary {
+            background: #2196f3;
+        }
+        button.secondary:hover {
+            background: #1976d2;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .stats {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-item {
+            flex: 1;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2196f3;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗑️ 清空所有数据</h1>
+        
+        <div class="warning">
+            <strong>⚠️ 警告：</strong>
+            <ul>
+                <li>此操作将清空所有比赛、选手和比赛记录数据</li>
+                <li>数据会从 localStorage 和 GitHub Gist 中删除</li>
+                <li>此操作不可恢复，请谨慎操作！</li>
+            </ul>
+        </div>
+        
+        <div class="stats" id="stats">
+            <div class="stat-item">
+                <div class="stat-number" id="tournamentCount">-</div>
+                <div class="stat-label">比赛数</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="matchCount">-</div>
+                <div class="stat-label">比赛记录</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="userCount">-</div>
+                <div class="stat-label">用户数</div>
+            </div>
+        </div>
+        
+        <div id="result"></div>
+        
+        <div style="margin-top: 20px;">
+            <button class="secondary" onclick="checkData()">🔍 查看当前数据</button>
+            <button onclick="clearAllData()">🗑️ 清空所有数据</button>
+        </div>
+        
+        <div id="dataPreview" style="margin-top: 20px;"></div>
+    </div>
+    
+    <script>
+        const DATA_KEY = 'tennis_tournament_data';
+        const GIST_ID = 'YOUR_GIST_ID';
+        const GIST_TOKEN = 'YOUR_GIST_TOKEN';
+        const GIST_API_BASE = 'https://api.github.com/gists';
+        const GIST_FILENAME = 'data.json';
+        
+        // 检查当前数据
+        function checkData() {
+            const resultDiv = document.getElementById('result');
+            
+            try {
+                const dataStr = localStorage.getItem(DATA_KEY);
+                if (!dataStr) {
+                    resultDiv.innerHTML = '<div class="warning">⚠️ localStorage中没有数据</div>';
+                    document.getElementById('tournamentCount').textContent = '0';
+                    document.getElementById('matchCount').textContent = '0';
+                    document.getElementById('userCount').textContent = '0';
+                    document.getElementById('dataPreview').innerHTML = '';
+                    return;
+                }
+                
+                const data = JSON.parse(dataStr);
+                const tournaments = data.tournaments || [];
+                const matches = data.matches || [];
+                const users = data.users || [];
+                
+                // 更新统计
+                document.getElementById('tournamentCount').textContent = tournaments.length;
+                document.getElementById('matchCount').textContent = matches.length;
+                document.getElementById('userCount').textContent = users.length;
+                
+                // 显示数据预览
+                document.getElementById('dataPreview').innerHTML = `
+                    <h3>当前数据：</h3>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+                
+                resultDiv.innerHTML = '<div class="success">✅ 数据加载成功</div>';
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ 检查失败: ${error.message}</div>`;
+                console.error('检查数据错误:', error);
+            }
+        }
+        
+        // 清空所有数据
+        async function clearAllData() {
+            // 双重确认
+            if (!confirm('⚠️ 确定要清空所有数据吗？\n\n此操作将删除：\n- 所有比赛\n- 所有选手\n- 所有比赛记录\n\n此操作不可恢复！')) {
+                return;
+            }
+            
+            if (!confirm('⚠️ 最后确认：你真的要清空所有数据吗？')) {
+                return;
+            }
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div class="warning">正在清空数据...</div>';
+            
+            try {
+                // 创建空数据结构
+                const emptyData = {
+                    tournaments: [],
+                    users: [],
+                    matches: [],
+                    lastSync: new Date().toISOString()
+                };
+                
+                // 清空 localStorage
+                localStorage.setItem(DATA_KEY, JSON.stringify(emptyData));
+                console.log('✅ localStorage已清空');
+                
+                // 更新统计
+                document.getElementById('tournamentCount').textContent = '0';
+                document.getElementById('matchCount').textContent = '0';
+                document.getElementById('userCount').textContent = '0';
+                
+                // 清空 GitHub Gist（如果配置了）
+                if (GIST_ID && GIST_TOKEN) {
+                    try {
+                        const response = await fetch(`${GIST_API_BASE}/${GIST_ID}`, {
+                            method: 'PATCH',
+                            headers: {
+                                'Authorization': `token ${GIST_TOKEN}`,
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/vnd.github.v3+json'
+                            },
+                            body: JSON.stringify({
+                                files: {
+                                    [GIST_FILENAME]: {
+                                        content: JSON.stringify(emptyData, null, 2)
+                                    }
+                                }
+                            })
+                        });
+                        
+                        if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}));
+                            throw new Error(errorData.message || `HTTP错误: ${response.status}`);
+                        }
+                        
+                        console.log('✅ GitHub Gist已清空');
+                        resultDiv.innerHTML = '<div class="success">✅ 所有数据已清空！<br>✅ localStorage已清空<br>✅ GitHub Gist已清空</div>';
+                        
+                    } catch (gistError) {
+                        console.error('清空Gist失败:', gistError);
+                        resultDiv.innerHTML = `<div class="success">✅ localStorage已清空<br>⚠️ GitHub Gist清空失败: ${gistError.message}</div>`;
+                    }
+                } else {
+                    resultDiv.innerHTML = '<div class="success">✅ localStorage已清空<br>⚠️ 未配置GitHub Gist，仅清空了本地数据</div>';
+                }
+                
+                // 更新预览
+                document.getElementById('dataPreview').innerHTML = `
+                    <h3>清空后的数据：</h3>
+                    <pre>${JSON.stringify(emptyData, null, 2)}</pre>
+                `;
+                
+                alert('✅ 数据清空完成！\n\n请刷新应用页面以查看效果。');
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ 清空失败: ${error.message}</div>`;
+                console.error('清空数据错误:', error);
+            }
+        }
+        
+        // 页面加载时自动检查
+        window.onload = function() {
+            checkData();
+        };
+    </script>
+</body>
+</html>
+

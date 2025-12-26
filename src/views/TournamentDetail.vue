@@ -1,6 +1,23 @@
 <template>
   <div class="tournament-detail">
-    <van-nav-bar :title="tournament?.name || '比赛详情'" left-arrow @click-left="$router.back()" />
+    <van-nav-bar :title="tournament?.name || '比赛详情'" left-arrow @click-left="$router.back()" fixed>
+      <template #right>
+        <van-icon 
+          name="edit" 
+          size="20" 
+          @click="handleEditTournament"
+          style="padding: 4px; margin-right: 8px;"
+          title="编辑比赛信息"
+        />
+        <van-icon 
+          name="delete-o" 
+          size="20" 
+          color="#ee0a24" 
+          @click="handleDeleteTournament"
+          style="padding: 4px;"
+        />
+      </template>
+    </van-nav-bar>
     
     <div class="content" v-if="tournament">
       <!-- 比赛信息 -->
@@ -69,9 +86,9 @@
         />
       </van-cell-group>
       
-      <!-- 比赛列表（按小组分组） -->
+      <!-- 赛事列表（按小组分组） -->
       <van-cell-group inset style="margin-top: 16px;">
-        <van-cell title="比赛列表" />
+        <van-cell title="比赛场次" />
         <van-empty v-if="!tournament.matches || tournament.matches.length === 0" description="暂无比赛" />
         
         <!-- 按小组分组显示 -->
@@ -263,8 +280,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getTournament, updateTournament } from '../api/tournaments'
-import { showFailToast, showSuccessToast } from 'vant'
+import { getTournament, updateTournament, deleteTournament } from '../api/tournaments'
+import { showFailToast, showSuccessToast, showConfirmDialog } from 'vant'
 import AddPlayers from '../components/AddPlayers.vue'
 import DrawGroups from '../components/DrawGroups.vue'
 import GroupRanking from '../components/GroupRanking.vue'
@@ -509,6 +526,12 @@ function formatDateTime(tournament) {
 
 // 已移除审核状态显示，添加后直接通过
 
+function handleEditTournament() {
+  // 显示编辑比赛弹窗（编辑第一个比赛作为示例，实际应该编辑比赛本身）
+  // 这里可以添加编辑比赛信息的逻辑
+  showFailToast('编辑比赛功能开发中')
+}
+
 function goToMatch(id) {
   // 传递tournament_id，确保加载正确的比赛
   const tournamentId = tournament.value?.id
@@ -593,21 +616,83 @@ function getRoundDisplayName(round) {
 
 async function loadTournament() {
   try {
-    const response = await getTournament(route.params.id)
-    if (response.success) {
+    // 如果ID是字符串，尝试转换为数字
+    const tournamentId = route.params.id
+    const id = typeof tournamentId === 'string' && /^\d+$/.test(tournamentId) 
+      ? parseInt(tournamentId) 
+      : tournamentId
+    
+    console.log('📖 加载比赛，ID:', id, '类型:', typeof id)
+    
+    const response = await getTournament(id)
+    if (response.success && response.data) {
       tournament.value = response.data
+      console.log('✅ 比赛加载成功:', tournament.value.name)
+      
+      // 同步比赛列表中的选手名字，确保数据一致性
+      if (tournament.value.matches && tournament.value.players) {
+        tournament.value.matches.forEach(match => {
+          if (match.player1_id !== undefined && match.player1_id !== null) {
+            const player1 = tournament.value.players.find(p => {
+              const pId = p.id
+              const mId = match.player1_id
+              return pId === mId || String(pId) === String(mId) || Number(pId) === Number(mId)
+            })
+            if (player1 && player1.name) {
+              match.player1_name = player1.name
+              match.player1_id = player1.id // 确保ID类型一致
+            }
+          }
+          if (match.player2_id !== undefined && match.player2_id !== null) {
+            const player2 = tournament.value.players.find(p => {
+              const pId = p.id
+              const mId = match.player2_id
+              return pId === mId || String(pId) === String(mId) || Number(pId) === Number(mId)
+            })
+            if (player2 && player2.name) {
+              match.player2_name = player2.name
+              match.player2_id = player2.id // 确保ID类型一致
+            }
+          }
+        })
+      }
     } else {
-      showFailToast(response.message || '加载失败')
+      console.error('❌ 比赛不存在，响应:', response)
+      showFailToast(response.message || '比赛不存在')
+      // 延迟后返回列表页
+      setTimeout(() => {
+        router.push('/tournaments')
+      }, 2000)
     }
   } catch (error) {
+    console.error('❌ 加载比赛失败:', error)
     showFailToast('加载失败：' + error.message)
+    setTimeout(() => {
+      router.push('/tournaments')
+    }, 2000)
   }
 }
 
-function handlePlayersAdded() {
-  // 重新加载比赛数据
-  loadTournament()
+async function handlePlayersAdded(updatedPlayers) {
+  console.log('📥 收到选手添加成功事件，选手数:', updatedPlayers?.length || 0)
+  
+  // 先关闭弹窗
   showAddPlayers.value = false
+  
+  // 重新加载比赛数据（确保数据同步）
+  try {
+    await loadTournament()
+    console.log('✅ 比赛数据已重新加载')
+    
+    // 验证选手是否已添加
+    if (tournament.value && tournament.value.players) {
+      console.log('✅ 当前比赛选手数:', tournament.value.players.length)
+      showSuccessToast(`选手已添加，当前共${tournament.value.players.length}名选手`)
+    }
+  } catch (error) {
+    console.error('❌ 重新加载比赛数据失败:', error)
+    showFailToast('数据加载失败，请刷新页面')
+  }
 }
 
 function handleDrawSuccess() {
@@ -618,6 +703,37 @@ function handleDrawSuccess() {
   setTimeout(() => {
     showRanking.value = true
   }, 300)
+}
+
+async function handleDeleteTournament() {
+  if (!tournament.value) {
+    return
+  }
+  
+  try {
+    await showConfirmDialog({
+      title: '确认删除',
+      message: `确定要删除比赛"${tournament.value.name}"吗？此操作不可恢复，将同时删除该比赛的所有相关数据（选手、比赛记录等）。`,
+      confirmButtonColor: '#ee0a24'
+    })
+    
+    // 用户确认删除
+    const response = await deleteTournament(tournament.value.id)
+    
+    if (response.success) {
+      showSuccessToast('删除成功')
+      // 返回比赛列表页
+      router.push('/tournaments')
+    } else {
+      showFailToast(response.message || '删除失败')
+    }
+  } catch (error) {
+    // 用户取消删除
+    if (error !== 'cancel') {
+      console.error('删除比赛错误:', error)
+      showFailToast('删除失败：' + error.message)
+    }
+  }
 }
 
 async function handleQuickDraw() {

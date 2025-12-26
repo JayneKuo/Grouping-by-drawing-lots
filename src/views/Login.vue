@@ -1,10 +1,10 @@
 <template>
   <div class="login">
-    <van-nav-bar title="登录" left-arrow @click-left="$router.back()" />
+    <van-nav-bar title="登录" left-arrow @click-left="$router.back()" fixed />
     
     <div class="login-content">
       <div class="logo">🎾</div>
-      <h2 class="title">欢迎回来</h2>
+      <h2 class="title">我的球搭子</h2>
       <p class="subtitle">登录以继续使用</p>
       
       <van-tabs v-model:active="activeTab" class="login-tabs">

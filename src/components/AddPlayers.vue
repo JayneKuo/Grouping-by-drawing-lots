@@ -152,6 +152,14 @@ const showGenderPicker = ref(false)
 const fileList = ref([])
 const previewPlayers = ref([])
 const players = ref([...props.existingPlayers])
+
+// 监听existingPlayers变化，更新本地players
+watch(() => props.existingPlayers, (newPlayers) => {
+  if (newPlayers && Array.isArray(newPlayers)) {
+    players.value = [...newPlayers]
+    console.log('📥 AddPlayers: 更新选手列表，数量:', players.value.length)
+  }
+}, { immediate: true, deep: true })
 const batchNames = ref('')
 
 const playerForm = ref({
@@ -188,7 +196,7 @@ async function onAddPlayer() {
   
   try {
     const response = await addPlayer(props.tournamentId, playerData)
-    if (response.success) {
+    if (response.success && response.data) {
       players.value.push(response.data)
       showSuccessToast('添加成功')
       
@@ -200,8 +208,9 @@ async function onAddPlayer() {
         phone: ''
       }
       
-      // 通知父组件
-      emit('success', players.value)
+      // 通知父组件更新
+      emit('success', [...players.value])
+      console.log('✅ 单个添加成功，当前选手数:', players.value.length)
     } else {
       showFailToast(response.message || '添加失败')
     }
@@ -217,18 +226,39 @@ async function onBatchAdd() {
     return
   }
   
-  // 解析每行姓名
-  const names = batchNames.value
+  // 解析每行姓名，自动识别数字并提取序号
+  const parsedLines = batchNames.value
     .split('\n')
-    .map(name => name.trim())
-    .filter(name => name.length > 0)
+    .map((line, index) => {
+      const trimmed = line.trim()
+      if (!trimmed) return null
+      
+      // 尝试匹配数字开头的格式：如 "1. 张三"、"1 张三"、"1-张三"、"1、张三"
+      const numberMatch = trimmed.match(/^(\d+)[.\-\s、]?\s*(.+)$/)
+      if (numberMatch) {
+        return {
+          number: numberMatch[1],
+          name: numberMatch[2].trim()
+        }
+      }
+      
+      // 如果没有数字，使用行号作为序号
+      return {
+        number: String(index + 1),
+        name: trimmed
+      }
+    })
+    .filter(item => item && item.name.length > 0)
   
-  if (names.length === 0) {
+  if (parsedLines.length === 0) {
     showFailToast('请输入至少一个选手姓名')
     return
   }
   
-  // 检查是否有重复
+  // 提取姓名列表
+  const names = parsedLines.map(item => item.name)
+  
+  // 检查是否有重复姓名
   const duplicates = names.filter((name, index) => names.indexOf(name) !== index)
   if (duplicates.length > 0) {
     showFailToast(`发现重复姓名：${duplicates.join('、')}`)
@@ -237,24 +267,24 @@ async function onBatchAdd() {
   
   // 检查是否已存在
   const existingNames = players.value.map(p => p.name)
-  const newNames = names.filter(name => !existingNames.includes(name))
+  const newPlayers = parsedLines.filter(item => !existingNames.includes(item.name))
   
-  if (newNames.length === 0) {
+  if (newPlayers.length === 0) {
     showFailToast('所有选手已存在')
     return
   }
   
-  if (newNames.length < names.length) {
-    const skipped = names.length - newNames.length
+  if (newPlayers.length < parsedLines.length) {
+    const skipped = parsedLines.length - newPlayers.length
     showFailToast(`跳过${skipped}个已存在的选手`)
   }
   
   // 批量添加（使用批量API）
   try {
-    const playerDataList = newNames.map(name => ({
-      name,
+    const playerDataList = newPlayers.map(item => ({
+      name: item.name,
+      number: item.number, // 保存识别到的序号
       gender: '',
-      number: '',
       phone: '',
       status: 'approved' // 直接通过，无需审核
     }))
@@ -267,11 +297,18 @@ async function onBatchAdd() {
     const response = await batchImportPlayers(props.tournamentId, playerDataList)
     console.log('批量添加响应:', response)
     
-    if (response.success) {
-      players.value.push(...response.data)
-      showSuccessToast(response.message || `成功添加${response.data.length}名选手`)
+    if (response.success && response.data) {
+      // 添加新选手到列表
+      const newPlayers = Array.isArray(response.data) ? response.data : [response.data]
+      players.value.push(...newPlayers)
+      
+      console.log('✅ 批量添加成功，新增选手数:', newPlayers.length, '当前总数:', players.value.length)
+      
+      showSuccessToast(response.message || `成功添加${newPlayers.length}名选手`)
       batchNames.value = '' // 清空输入框
-      emit('success', players.value)
+      
+      // 通知父组件更新（传递完整的选手列表）
+      emit('success', [...players.value])
     } else {
       showFailToast(response.message || '批量添加失败')
     }

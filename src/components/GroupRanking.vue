@@ -114,14 +114,30 @@ function calculateRankings() {
   }
   
   // 计算所有组排名
-  rankings.value = getAllGroupRankings(props.players, props.matches || [])
+  const allRankings = getAllGroupRankings(props.players, props.matches || [])
+  
+  // 对组名进行排序：A组在前，B组在后，然后C、D等
+  const sortedGroupNames = Object.keys(allRankings).sort((a, b) => {
+    // 如果都是单字母（A, B, C等），按字母顺序排序
+    if (a.length === 1 && b.length === 1) {
+      return a.localeCompare(b)
+    }
+    // 否则按字符串比较
+    return a.localeCompare(b)
+  })
+  
+  // 重新构建排序后的rankings对象
+  rankings.value = {}
+  sortedGroupNames.forEach(groupName => {
+    rankings.value[groupName] = allRankings[groupName]
+  })
   
   // 获取出线选手
   qualifiedPlayers.value = getQualifiedPlayers(rankings.value)
   
-  // 设置默认激活的组
-  if (Object.keys(rankings.value).length > 0) {
-    activeGroup.value = Object.keys(rankings.value)[0]
+  // 设置默认激活的组（A组）
+  if (sortedGroupNames.length > 0) {
+    activeGroup.value = sortedGroupNames[0]
   }
 }
 

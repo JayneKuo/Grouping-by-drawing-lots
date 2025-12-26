@@ -161,7 +161,18 @@ export function getAllGroupRankings(players, matches) {
   
   // 计算每组排名
   const rankings = {}
-  Object.keys(groups).forEach(groupName => {
+  
+  // 对组名进行排序：A组在前，B组在后，然后C、D等
+  const sortedGroupNames = Object.keys(groups).sort((a, b) => {
+    // 如果都是单字母（A, B, C等），按字母顺序排序
+    if (a.length === 1 && b.length === 1) {
+      return a.localeCompare(b)
+    }
+    // 否则按字符串比较
+    return a.localeCompare(b)
+  })
+  
+  sortedGroupNames.forEach(groupName => {
     rankings[groupName] = calculateGroupRanking(players, matches, groupName)
   })
   
