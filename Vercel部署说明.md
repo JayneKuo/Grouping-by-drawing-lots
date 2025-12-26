@@ -25,12 +25,46 @@
 
 ### 步骤2：配置环境变量
 
-在项目根目录创建 `.env.local`：
+**重要**：`.env.local` 文件不会提交到Git，所以需要在Vercel Dashboard中手动配置环境变量。
+
+#### 本地开发配置（可选）
+
+在项目根目录创建 `.env.local`（仅用于本地开发）：
 
 ```env
-VITE_GIST_ID=你的Gist ID
-VITE_GIST_TOKEN=你的GitHub Token（可选）
+VITE_GIST_ID=2cabed01d5406fa3ea1334f2e116bc90
+VITE_GIST_TOKEN=你的GitHub Token
 ```
+
+#### Vercel部署配置（必须）
+
+1. **登录** [Vercel Dashboard](https://vercel.com/dashboard)
+2. **选择你的项目**（或创建新项目）
+3. **进入项目设置**：
+   - 点击项目名称
+   - 点击顶部菜单的 **Settings**
+   - 左侧菜单选择 **Environment Variables**
+4. **添加环境变量**：
+   
+   点击 **Add New** 按钮，添加以下两个变量：
+   
+   **变量1：**
+   - Key: `VITE_GIST_ID`
+   - Value: `2cabed01d5406fa3ea1334f2e116bc90`
+   - Environment: ✅ Production ✅ Preview ✅ Development（全选）
+   - 点击 **Save**
+   
+   **变量2：**
+   - Key: `VITE_GIST_TOKEN`
+   - Value: `你的Token（例如：ghp_xxxxxxxxxxxxx）`
+   - Environment: ✅ Production ✅ Preview ✅ Development（全选）
+   - 点击 **Save**
+
+5. **重新部署**：
+   - 回到项目首页
+   - 点击 **Deployments** 标签
+   - 找到最新的部署，点击右侧的 **...** 菜单
+   - 选择 **Redeploy**
 
 ### 步骤3：推送到GitHub
 
@@ -51,9 +85,15 @@ git push
    - **Build Command**：`npm run build`
    - **Output Directory**：`dist`
 5. **Environment Variables**（重要！）：
-   - `VITE_GIST_ID` = 你的Gist ID
-   - `VITE_GIST_TOKEN` = 你的GitHub Token（可选）
-6. 点击 **Deploy**
+   
+   在部署前或部署后，必须配置环境变量：
+   - 进入项目 **Settings** → **Environment Variables**
+   - 添加 `VITE_GIST_ID` = `2cabed01d5406fa3ea1334f2e116bc90`
+   - 添加 `VITE_GIST_TOKEN` = `你的Token`
+   - 选择所有环境（Production、Preview、Development）
+   - 点击 **Save**
+   
+6. 点击 **Deploy**（或如果已部署，点击 **Redeploy**）
 
 ### 步骤5：完成！
 
