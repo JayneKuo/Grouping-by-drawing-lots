@@ -6,7 +6,10 @@ const USE_LOCAL_STORAGE = true // 设置为true使用localStorage，false使用�
 
 export async function getTournaments() {
   if (USE_LOCAL_STORAGE) {
-    const tournaments = await storage.getTournaments()
+    const result = await storage.getTournaments()
+    // storage.getTournaments() 返回 { success: true, data: [...] }
+    // 需要提取 data 字段
+    const tournaments = result.data || (Array.isArray(result) ? result : [])
     return Promise.resolve({
       success: true,
       data: tournaments
@@ -20,16 +23,17 @@ export async function getTournaments() {
 
 export async function getTournament(id) {
   if (USE_LOCAL_STORAGE) {
-    const tournament = await storage.getTournament(id)
-    if (tournament) {
+    const result = await storage.getTournament(id)
+    // storage.getTournament() 返回 { success: true/false, data: tournament }
+    if (result.success && result.data) {
       return Promise.resolve({
         success: true,
-        data: tournament
+        data: result.data
       })
     } else {
       return Promise.resolve({
         success: false,
-        message: '比赛不存在'
+        message: result.message || '比赛不存在'
       })
     }
   }
