@@ -1,7 +1,21 @@
 // Vercel API数据存储工具 - 替代Firebase
 // 使用Vercel Serverless Functions + KV存储
 
-const API_BASE_URL = process.env.VITE_API_URL || 'https://your-project.vercel.app/api'
+// API基础URL - 优先使用环境变量，否则使用当前域名
+const getApiBaseUrl = () => {
+  // 如果设置了环境变量，使用环境变量
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL
+  }
+  // 否则自动使用当前域名
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/api`
+  }
+  // 默认值（构建时）
+  return '/api'
+}
+
+const API_BASE_URL = getApiBaseUrl()
 
 // 同步状态管理（与firebase.js保持一致）
 export const syncStatus = {

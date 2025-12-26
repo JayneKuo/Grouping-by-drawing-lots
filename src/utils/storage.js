@@ -2,10 +2,10 @@
 // 设置 USE_VERCEL_API = true 使用Vercel API（国内访问快）
 // 设置 USE_VERCEL_API = false 使用Firebase（需要VPN）
 
-const USE_VERCEL_API = false // 改为true使用Vercel API（需要先部署Vercel API）
+const USE_VERCEL_API = true // 改为true使用Vercel API（需要先部署Vercel API）
 
-// 使用Firebase（默认）
-export { storage, syncStatus } from './firebase'
+// 使用Vercel API（推荐，国内访问快）
+export { storage, syncStatus } from './vercel'
 
-// 如果要使用Vercel API，取消下面的注释并注释掉上面的行
-// export { storage, syncStatus } from './vercel'
+// 如果要使用Firebase，取消下面的注释并注释掉上面的行
+// export { storage, syncStatus } from './firebase'
