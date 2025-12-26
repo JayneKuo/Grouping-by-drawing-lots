@@ -34,5 +34,8 @@ Thumbs.db
 firebase-debug.log
 firestore-debug.log
 
+# 本地测试数据（不提交到Git）
+backend/local-data.json
+
 # 确保只跟踪项目目录内的文件
 # 不要跟踪项目目录外的任何文件

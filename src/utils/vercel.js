@@ -7,7 +7,11 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL
   }
-  // 否则自动使用当前域名
+  // 本地开发环境：使用相对路径，Vite会自动代理到本地API服务器
+  if (import.meta.env.DEV) {
+    return '/api'
+  }
+  // 生产环境：使用当前域名
   if (typeof window !== 'undefined') {
     return `${window.location.origin}/api`
   }
